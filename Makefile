@@ -2,6 +2,7 @@
 
 BINARY_NAME := modrot
 COVERAGE_DIR := coverage
+GOSEC_EXCLUDE ?= G204,G304
 
 .PHONY: help
 help: ## Display this help message
@@ -95,12 +96,12 @@ trivy: ## Run Trivy filesystem vulnerability scanner
 	trivy fs --scanners vuln,secret --severity HIGH,CRITICAL .
 
 .PHONY: gosec
-gosec: ## Run gosec security scanner
+gosec: ## Run gosec security scanner (override GOSEC_EXCLUDE= to show all)
 	@command -v gosec >/dev/null 2>&1 || { \
 		echo "Installing gosec..."; \
 		go install github.com/securego/gosec/v2/cmd/gosec@latest; \
 	}
-	gosec -quiet ./...
+	gosec -quiet $(if $(GOSEC_EXCLUDE),-exclude=$(GOSEC_EXCLUDE)) ./...
 
 .PHONY: gitleaks
 gitleaks: ## Run gitleaks secret scanner

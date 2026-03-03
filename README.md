@@ -452,12 +452,79 @@ $ modrot --sort=pushed      # Least recently pushed first
 
 ## Development
 
-```bash
-go build -o modrot .    # Build the binary
-go test ./...           # Run all tests
+Run `make` to see all available targets:
+
+```
+$ make
+Usage:
+  make <target>
+  help                 Display this help message
+
+Build
+  build                Build the binary
+  install              Install to GOPATH/bin
+
+Testing
+  test                 Run all tests
+  coverage             Generate test coverage report
+  coverage-html        Generate and open HTML coverage report
+
+Code Quality
+  fmt                  Format all Go source files
+  vet                  Run go vet
+  lint                 Run golangci-lint
+  lint-fix             Run golangci-lint with auto-fix
+  check                Run all code quality checks (fmt, vet, lint)
+
+Dependencies
+  tidy                 Tidy and verify go modules
+
+Security
+  govulncheck          Run vulnerability check on dependencies
+  trivy                Run Trivy filesystem vulnerability scanner
+  gosec                Run gosec security scanner
+  gitleaks             Run gitleaks secret scanner
+  security             Run all security scans
+
+Verify
+  verify               Run all checks before commit
+
+Cleanup
+  clean                Clean build artifacts
 ```
 
-Build with version info (matches what GoReleaser does for releases):
+### Quick start
+
+```bash
+make build             # Build the binary
+make test              # Run tests with race detection
+make check             # Format, vet, and lint
+make verify            # Run everything before committing
+```
+
+### Required tools
+
+The following are required for code quality and security targets:
+
+| Tool | Targets | Install |
+|------|---------|---------|
+| [golangci-lint](https://golangci-lint.run/) | `lint`, `lint-fix`, `check` | `brew install golangci-lint` |
+| [trivy](https://aquasecurity.github.io/trivy/) | `trivy`, `security` | `brew install trivy` |
+| [gitleaks](https://github.com/gitleaks/gitleaks) | `gitleaks`, `security` | `brew install gitleaks` |
+
+`govulncheck` and `gosec` auto-install via `go install` if not found.
+
+### Security scanning notes
+
+gosec excludes G204 (subprocess launched with variable) and G304 (file inclusion via variable) by default, since these are expected for a CLI tool that invokes `rg` and reads user-specified file paths. To see all findings including these:
+
+```bash
+make gosec GOSEC_EXCLUDE=
+```
+
+### Build with version info
+
+Matches what GoReleaser does for releases:
 
 ```bash
 go build -ldflags "-X main.version=dev -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o modrot .
