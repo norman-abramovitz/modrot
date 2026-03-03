@@ -189,13 +189,13 @@ func PrintStaleTable(stale []RepoStatus) {
 	sort.Slice(stale, func(i, j int) bool {
 		return stale[i].Module.Path < stale[j].Module.Path
 	})
-	fmt.Fprintf(os.Stderr, "\nSTALE DEPENDENCIES (%d %s not pushed in >%s)\n\n",
+	_, _ = fmt.Fprintf(os.Stderr, "\nSTALE DEPENDENCIES (%d %s not pushed in >%s)\n\n",
 		len(stale), pluralize(len(stale), "module", "modules"), formatThreshold())
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	if durationEnabled {
-		fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED\tINACTIVE")
+		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED\tINACTIVE")
 	} else {
-		fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED")
+		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED")
 	}
 	for _, r := range stale {
 		direct := "indirect"
@@ -205,12 +205,12 @@ func PrintStaleTable(stale []RepoStatus) {
 		pushedAt := fmtDate(r.PushedAt)
 		if durationEnabled {
 			dur := formatDurationShort(r.PushedAt)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt, dur)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt, dur)
 		} else {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt)
 		}
 	}
-	w.Flush()
+	_ = w.Flush()
 }
 
 // sortResults sorts a slice of RepoStatus based on the current sortMode.
@@ -256,9 +256,9 @@ func PrintSkippedTable(modules []Module) {
 	sort.Slice(modules, func(i, j int) bool {
 		return modules[i].Path < modules[j].Path
 	})
-	fmt.Fprintf(os.Stderr, "\nNON-GITHUB MODULES (%d non-GitHub %s)\n\n", len(modules), pluralize(len(modules), "module", "modules"))
+	_, _ = fmt.Fprintf(os.Stderr, "\nNON-GITHUB MODULES (%d non-GitHub %s)\n\n", len(modules), pluralize(len(modules), "module", "modules"))
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "MODULE\tVERSION\tLATEST\tDIRECT\tPUBLISHED\tSOURCE")
+	_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tLATEST\tDIRECT\tPUBLISHED\tSOURCE")
 	for _, m := range modules {
 		direct := "indirect"
 		if m.Direct {
@@ -269,9 +269,9 @@ func PrintSkippedTable(modules []Module) {
 			latest = "-"
 		}
 		published := fmtDate(m.VersionTime)
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, latest, direct, published, m.SourceURL)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, latest, direct, published, m.SourceURL)
 	}
-	w.Flush()
+	_ = w.Flush()
 }
 
 // printArchivedRows writes archived module rows to a tabwriter.
@@ -285,9 +285,9 @@ func printArchivedRows(w *tabwriter.Writer, archived []RepoStatus) {
 		pushedAt := fmtDate(r.PushedAt)
 		if durationEnabled {
 			dur := formatDuration(r.ArchivedAt)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, dur, pushedAt)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, dur, pushedAt)
 		} else {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, pushedAt)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, pushedAt)
 		}
 	}
 }
@@ -323,55 +323,55 @@ func PrintTable(results []RepoStatus, nonGitHubModules []Module, showAll bool, d
 	totalChecked := len(results)
 
 	if len(archived) > 0 {
-		fmt.Fprintf(os.Stderr, "\nARCHIVED DEPENDENCIES (%d of %d github.com modules)\n\n", len(archived), totalChecked)
+		_, _ = fmt.Fprintf(os.Stderr, "\nARCHIVED DEPENDENCIES (%d of %d github.com modules)\n\n", len(archived), totalChecked)
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		if durationEnabled {
-			fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tARCHIVED AT\tDURATION\tLAST PUSHED")
+			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tARCHIVED AT\tDURATION\tLAST PUSHED")
 		} else {
-			fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tARCHIVED AT\tLAST PUSHED")
+			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tARCHIVED AT\tLAST PUSHED")
 		}
 
 		// Show grouped output when there are both direct and indirect
 		if len(archivedDirect) > 0 && len(archivedIndirect) > 0 {
-			fmt.Fprintf(w, "\t\t\t\n")
-			fmt.Fprintf(w, "Direct (%d)\t\t\t\n", len(archivedDirect))
+			_, _ = fmt.Fprintf(w, "\t\t\t\n")
+			_, _ = fmt.Fprintf(w, "Direct (%d)\t\t\t\n", len(archivedDirect))
 			printArchivedRows(w, archivedDirect)
-			fmt.Fprintf(w, "\t\t\t\n")
-			fmt.Fprintf(w, "Indirect (%d)\t\t\t\n", len(archivedIndirect))
+			_, _ = fmt.Fprintf(w, "\t\t\t\n")
+			_, _ = fmt.Fprintf(w, "Indirect (%d)\t\t\t\n", len(archivedIndirect))
 			printArchivedRows(w, archivedIndirect)
 		} else {
 			// Only one group exists, no sub-headers needed
 			all := append(archivedDirect, archivedIndirect...)
 			printArchivedRows(w, all)
 		}
-		w.Flush()
+		_ = w.Flush()
 	} else {
-		fmt.Fprintf(os.Stderr, "\nNo archived dependencies found among %d github.com modules.\n", totalChecked)
+		_, _ = fmt.Fprintf(os.Stderr, "\nNo archived dependencies found among %d github.com modules.\n", totalChecked)
 	}
 
 	if len(notFound) > 0 {
-		fmt.Fprintf(os.Stderr, "\nNOT FOUND (%d modules):\n", len(notFound))
+		_, _ = fmt.Fprintf(os.Stderr, "\nNOT FOUND (%d modules):\n", len(notFound))
 		for _, r := range notFound {
-			fmt.Fprintf(os.Stderr, "  %s — %s\n", r.Module.Path, r.Error)
+			_, _ = fmt.Fprintf(os.Stderr, "  %s — %s\n", r.Module.Path, r.Error)
 		}
 	}
 
 	if showAll && len(active) > 0 {
-		fmt.Fprintf(os.Stderr, "\nACTIVE DEPENDENCIES (%d modules)\n\n", len(active))
+		_, _ = fmt.Fprintf(os.Stderr, "\nACTIVE DEPENDENCIES (%d modules)\n\n", len(active))
 		sort.Slice(active, func(i, j int) bool {
 			return active[i].Module.Path < active[j].Module.Path
 		})
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED")
+		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED")
 		for _, r := range active {
 			direct := "indirect"
 			if r.Module.Direct {
 				direct = "direct"
 			}
 			pushedAt := fmtDate(r.PushedAt)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt)
 		}
-		w.Flush()
+		_ = w.Flush()
 	}
 
 	// Deprecated modules section
@@ -380,17 +380,17 @@ func PrintTable(results []RepoStatus, nonGitHubModules []Module, showAll bool, d
 		sort.Slice(deps, func(i, j int) bool {
 			return deps[i].Path < deps[j].Path
 		})
-		fmt.Fprintf(os.Stderr, "\nDEPRECATED MODULES (%d %s)\n\n", len(deps), pluralize(len(deps), "module", "modules"))
+		_, _ = fmt.Fprintf(os.Stderr, "\nDEPRECATED MODULES (%d %s)\n\n", len(deps), pluralize(len(deps), "module", "modules"))
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tMESSAGE")
+		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tMESSAGE")
 		for _, m := range deps {
 			direct := "indirect"
 			if m.Direct {
 				direct = "direct"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m.Path, m.Version, direct, m.Deprecated)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m.Path, m.Version, direct, m.Deprecated)
 		}
-		w.Flush()
+		_ = w.Flush()
 	}
 
 	if len(nonGitHubModules) > 0 {
@@ -409,7 +409,7 @@ func PrintFiles(results []RepoStatus, fileMatches map[string][]FileMatch) {
 	}
 	sort.Strings(archivedPaths)
 
-	fmt.Fprintf(os.Stderr, "\nSOURCE FILES IMPORTING ARCHIVED MODULES\n")
+	_, _ = fmt.Fprintf(os.Stderr, "\nSOURCE FILES IMPORTING ARCHIVED MODULES\n")
 
 	for _, modPath := range archivedPaths {
 		matches := fileMatches[modPath]
@@ -419,9 +419,9 @@ func PrintFiles(results []RepoStatus, fileMatches map[string][]FileMatch) {
 			uniqueFiles[m.File] = true
 		}
 
-		fmt.Fprintf(os.Stdout, "\n%s (%d %s)\n", modPath, len(uniqueFiles), pluralize(len(uniqueFiles), "file", "files"))
+		_, _ = fmt.Fprintf(os.Stdout, "\n%s (%d %s)\n", modPath, len(uniqueFiles), pluralize(len(uniqueFiles), "file", "files"))
 		for _, m := range matches {
-			fmt.Fprintf(os.Stdout, "  %s:%d\n", m.File, m.Line)
+			_, _ = fmt.Fprintf(os.Stdout, "  %s:%d\n", m.File, m.Line)
 		}
 	}
 }
@@ -439,7 +439,7 @@ func PrintFilesPlain(results []RepoStatus, fileMatches map[string][]FileMatch) {
 
 	for _, modPath := range archivedPaths {
 		for _, m := range fileMatches[modPath] {
-			fmt.Fprintf(os.Stdout, "%s:%d:%s\n", m.File, m.Line, modPath)
+			_, _ = fmt.Fprintf(os.Stdout, "%s:%d:%s\n", m.File, m.Line, modPath)
 		}
 	}
 }
@@ -450,17 +450,17 @@ func PrintDeprecatedTable(modules []Module) {
 	sort.Slice(modules, func(i, j int) bool {
 		return modules[i].Path < modules[j].Path
 	})
-	fmt.Fprintf(os.Stderr, "\nDEPRECATED MODULES (%d %s)\n\n", len(modules), pluralize(len(modules), "module", "modules"))
+	_, _ = fmt.Fprintf(os.Stderr, "\nDEPRECATED MODULES (%d %s)\n\n", len(modules), pluralize(len(modules), "module", "modules"))
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tMESSAGE")
+	_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tMESSAGE")
 	for _, m := range modules {
 		direct := "indirect"
 		if m.Direct {
 			direct = "direct"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m.Path, m.Version, direct, m.Deprecated)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m.Path, m.Version, direct, m.Deprecated)
 	}
-	w.Flush()
+	_ = w.Flush()
 }
 
 // pluralize returns singular or plural form based on count.
@@ -622,7 +622,7 @@ func PrintJSON(results []RepoStatus, nonGitHubModules []Module, showAll bool, fi
 	out := buildJSONOutput(results, nonGitHubModules, showAll, fileMatches, staleResults, deprecatedModules...)
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	enc.Encode(out)
+	_ = enc.Encode(out)
 }
 
 // formatArchivedLine returns a formatted string with version, archived date, and last pushed date.
@@ -793,11 +793,11 @@ func PrintTree(results []RepoStatus, graph map[string][]string, allModules []Mod
 	entries, ctx := buildTree(results, graph, allModules)
 
 	if entries == nil {
-		fmt.Fprintf(os.Stderr, "\nNo archived dependencies found.\n")
+		_, _ = fmt.Fprintf(os.Stderr, "\nNo archived dependencies found.\n")
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "\nDEPENDENCY TREE (archived dependencies marked with [ARCHIVED])\n\n")
+	_, _ = fmt.Fprintf(os.Stderr, "\nDEPENDENCY TREE (archived dependencies marked with [ARCHIVED])\n\n")
 
 	// fileCountSuffix returns " (N files)" if fileMatches has entries for modPath.
 	fileCountSuffix := func(modPath string) string {
@@ -1014,7 +1014,7 @@ func PrintTreeJSON(results []RepoStatus, graph map[string][]string, allModules [
 	out := buildTreeJSONOutput(results, graph, allModules, fileMatches, nonGitHubModules, deprecatedModules...)
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	enc.Encode(out)
+	_ = enc.Encode(out)
 }
 
 // RecursiveJSONOutput wraps per-module results for --recursive --json.

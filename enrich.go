@@ -169,7 +169,7 @@ func (r *resolver) fetchLatestInfo(modulePath string) (latestVersion, sourceURL 
 	if err != nil {
 		return "", ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return "", ""
@@ -213,7 +213,7 @@ func (r *resolver) fetchVersionInfo(modulePath, version string) time.Time {
 	if err != nil {
 		return time.Time{}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return time.Time{}

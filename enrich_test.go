@@ -53,7 +53,7 @@ func TestFetchLatestInfo(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.status)
 				if tt.response != "" {
-					fmt.Fprint(w, tt.response)
+					_, _ = fmt.Fprint(w, tt.response)
 				}
 			}))
 			defer srv.Close()
@@ -74,7 +74,7 @@ func TestFetchLatestInfo_CorrectURL(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		fmt.Fprint(w, `{"Version":"v0.22.0"}`)
+		_, _ = fmt.Fprint(w, `{"Version":"v0.22.0"}`)
 	}))
 	defer srv.Close()
 
@@ -116,7 +116,7 @@ func TestFetchVersionInfo(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.status)
 				if tt.response != "" {
-					fmt.Fprint(w, tt.response)
+					_, _ = fmt.Fprint(w, tt.response)
 				}
 			}))
 			defer srv.Close()
@@ -134,7 +134,7 @@ func TestFetchVersionInfo_CorrectURL(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		fmt.Fprint(w, `{"Version":"v0.17.0","Time":"2024-03-15T10:30:00Z"}`)
+		_, _ = fmt.Fprint(w, `{"Version":"v0.17.0","Time":"2024-03-15T10:30:00Z"}`)
 	}))
 	defer srv.Close()
 
@@ -151,13 +151,13 @@ func TestEnrichNonGitHub(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/golang.org/x/mod/@latest":
-			fmt.Fprint(w, `{"Version":"v0.22.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/mod"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v0.22.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/mod"}}`)
 		case "/golang.org/x/mod/@v/v0.17.0.info":
-			fmt.Fprint(w, `{"Version":"v0.17.0","Time":"2024-03-15T10:30:00Z"}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v0.17.0","Time":"2024-03-15T10:30:00Z"}`)
 		case "/golang.org/x/text/@latest":
-			fmt.Fprint(w, `{"Version":"v0.21.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/text"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v0.21.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/text"}}`)
 		case "/golang.org/x/text/@v/v0.14.0.info":
-			fmt.Fprint(w, `{"Version":"v0.14.0","Time":"2023-10-11T17:42:28Z"}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v0.14.0","Time":"2023-10-11T17:42:28Z"}`)
 		default:
 			w.WriteHeader(404)
 		}
@@ -239,13 +239,13 @@ func TestEnrichNonGitHub_WorkerPool(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/golang.org/x/mod/@latest":
-			fmt.Fprint(w, `{"Version":"v0.22.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/mod"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v0.22.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/mod"}}`)
 		case "/golang.org/x/mod/@v/v0.17.0.info":
-			fmt.Fprint(w, `{"Version":"v0.17.0","Time":"2024-03-15T10:30:00Z"}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v0.17.0","Time":"2024-03-15T10:30:00Z"}`)
 		case "/golang.org/x/text/@latest":
-			fmt.Fprint(w, `{"Version":"v0.21.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/text"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v0.21.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/text"}}`)
 		case "/golang.org/x/text/@v/v0.14.0.info":
-			fmt.Fprint(w, `{"Version":"v0.14.0","Time":"2023-10-11T17:42:28Z"}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v0.14.0","Time":"2023-10-11T17:42:28Z"}`)
 		default:
 			w.WriteHeader(404)
 		}
@@ -299,9 +299,9 @@ func TestEnrichAcrossModules_WorkerPool(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/golang.org/x/mod/@latest":
-			fmt.Fprint(w, `{"Version":"v0.22.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/mod"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v0.22.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/mod"}}`)
 		case "/golang.org/x/mod/@v/v0.17.0.info":
-			fmt.Fprint(w, `{"Version":"v0.17.0","Time":"2024-03-15T10:30:00Z"}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v0.17.0","Time":"2024-03-15T10:30:00Z"}`)
 		default:
 			w.WriteHeader(404)
 		}

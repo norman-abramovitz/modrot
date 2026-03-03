@@ -158,7 +158,7 @@ func (r *resolver) fetchGoModDeprecation(modulePath, version string) string {
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return ""

@@ -158,7 +158,7 @@ go 1.21
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.status)
 				if tt.body != "" {
-					fmt.Fprint(w, tt.body)
+					_, _ = fmt.Fprint(w, tt.body)
 				}
 			}))
 			defer srv.Close()
@@ -176,7 +176,7 @@ func TestFetchGoModDeprecation_CorrectURL(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		fmt.Fprint(w, "module github.com/foo/bar\n")
+		_, _ = fmt.Fprint(w, "module github.com/foo/bar\n")
 	}))
 	defer srv.Close()
 
@@ -193,11 +193,11 @@ func TestCheckDeprecations(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/github.com/golang/protobuf/@v/v1.5.4.mod":
-			fmt.Fprint(w, "// Deprecated: Use google.golang.org/protobuf instead.\nmodule github.com/golang/protobuf\n\ngo 1.17\n")
+			_, _ = fmt.Fprint(w,"// Deprecated: Use google.golang.org/protobuf instead.\nmodule github.com/golang/protobuf\n\ngo 1.17\n")
 		case "/github.com/foo/bar/@v/v1.0.0.mod":
-			fmt.Fprint(w, "module github.com/foo/bar\n\ngo 1.21\n")
+			_, _ = fmt.Fprint(w,"module github.com/foo/bar\n\ngo 1.21\n")
 		case "/github.com/old/thing/@v/v0.5.0.mod":
-			fmt.Fprint(w, "module github.com/old/thing // Deprecated: Use github.com/new/thing.\n\ngo 1.20\n")
+			_, _ = fmt.Fprint(w,"module github.com/old/thing // Deprecated: Use github.com/new/thing.\n\ngo 1.20\n")
 		default:
 			w.WriteHeader(404)
 		}
@@ -246,11 +246,11 @@ func TestCheckDeprecations_WorkerPool(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/github.com/golang/protobuf/@v/v1.5.4.mod":
-			fmt.Fprint(w, "// Deprecated: Use google.golang.org/protobuf instead.\nmodule github.com/golang/protobuf\n\ngo 1.17\n")
+			_, _ = fmt.Fprint(w,"// Deprecated: Use google.golang.org/protobuf instead.\nmodule github.com/golang/protobuf\n\ngo 1.17\n")
 		case "/github.com/foo/bar/@v/v1.0.0.mod":
-			fmt.Fprint(w, "module github.com/foo/bar\n\ngo 1.21\n")
+			_, _ = fmt.Fprint(w,"module github.com/foo/bar\n\ngo 1.21\n")
 		case "/github.com/old/thing/@v/v0.5.0.mod":
-			fmt.Fprint(w, "module github.com/old/thing // Deprecated: Use github.com/new/thing.\n\ngo 1.20\n")
+			_, _ = fmt.Fprint(w,"module github.com/old/thing // Deprecated: Use github.com/new/thing.\n\ngo 1.20\n")
 		default:
 			w.WriteHeader(404)
 		}
@@ -288,9 +288,9 @@ func TestCheckDeprecationsAcrossModules_WorkerPool(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/github.com/golang/protobuf/@v/v1.5.4.mod":
-			fmt.Fprint(w, "// Deprecated: Use google.golang.org/protobuf instead.\nmodule github.com/golang/protobuf\n\ngo 1.17\n")
+			_, _ = fmt.Fprint(w,"// Deprecated: Use google.golang.org/protobuf instead.\nmodule github.com/golang/protobuf\n\ngo 1.17\n")
 		case "/github.com/foo/bar/@v/v1.0.0.mod":
-			fmt.Fprint(w, "module github.com/foo/bar\n\ngo 1.21\n")
+			_, _ = fmt.Fprint(w,"module github.com/foo/bar\n\ngo 1.21\n")
 		default:
 			w.WriteHeader(404)
 		}

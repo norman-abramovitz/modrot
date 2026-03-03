@@ -32,10 +32,10 @@ func mermaidLabel(modulePath, version string) string {
 func PrintMermaid(results []RepoStatus, graph map[string][]string, allModules []Module) {
 	entries, ctx := buildTree(results, graph, allModules)
 
-	fmt.Fprintln(os.Stdout, "graph TD")
+	_, _ = fmt.Fprintln(os.Stdout, "graph TD")
 
-	if entries == nil || len(entries) == 0 {
-		fmt.Fprintln(os.Stdout, "    root[\"No archived dependencies\"]")
+	if len(entries) == 0 {
+		_, _ = fmt.Fprintln(os.Stdout, "    root[\"No archived dependencies\"]")
 		return
 	}
 
@@ -52,7 +52,7 @@ func PrintMermaid(results []RepoStatus, graph map[string][]string, allModules []
 	}
 
 	rootID := mermaidSafeID(rootKey)
-	fmt.Fprintf(os.Stdout, "    %s[\"%s\"]\n", rootID, rootKey)
+	_, _ = fmt.Fprintf(os.Stdout, "    %s[\"%s\"]\n", rootID, rootKey)
 
 	// Build version lookup for labels
 	versionByPath := make(map[string]string)
@@ -88,15 +88,15 @@ func PrintMermaid(results []RepoStatus, graph map[string][]string, allModules []
 
 		if !declared[directID] {
 			if ctx.archivedPaths[e.directPath] {
-				fmt.Fprintf(os.Stdout, "    %s[\"%s\"]:::archived\n", directID, label)
+				_, _ = fmt.Fprintf(os.Stdout, "    %s[\"%s\"]:::archived\n", directID, label)
 			} else {
-				fmt.Fprintf(os.Stdout, "    %s[\"%s\"]\n", directID, label)
+				_, _ = fmt.Fprintf(os.Stdout, "    %s[\"%s\"]\n", directID, label)
 			}
 			declared[directID] = true
 		}
 
 		// Link root → direct dep
-		fmt.Fprintf(os.Stdout, "    %s --> %s\n", rootID, directID)
+		_, _ = fmt.Fprintf(os.Stdout, "    %s --> %s\n", rootID, directID)
 
 		// Transitive archived deps
 		seen := make(map[string]bool)
@@ -115,16 +115,16 @@ func PrintMermaid(results []RepoStatus, graph map[string][]string, allModules []
 				if ctx.deprecatedByPath[a] != "" {
 					class = ":::deprecated"
 				}
-				fmt.Fprintf(os.Stdout, "    %s[\"%s\"]%s\n", aID, aLabel, class)
+				_, _ = fmt.Fprintf(os.Stdout, "    %s[\"%s\"]%s\n", aID, aLabel, class)
 				declared[aID] = true
 			}
 
 			// Link direct dep → archived transitive dep
-			fmt.Fprintf(os.Stdout, "    %s --> %s\n", directID, aID)
+			_, _ = fmt.Fprintf(os.Stdout, "    %s --> %s\n", directID, aID)
 		}
 	}
 
 	// Class definitions
-	fmt.Fprintln(os.Stdout, "    classDef archived fill:#f96,stroke:#333,stroke-width:2px")
-	fmt.Fprintln(os.Stdout, "    classDef deprecated fill:#ff9,stroke:#333,stroke-width:2px")
+	_, _ = fmt.Fprintln(os.Stdout, "    classDef archived fill:#f96,stroke:#333,stroke-width:2px")
+	_, _ = fmt.Fprintln(os.Stdout, "    classDef deprecated fill:#ff9,stroke:#333,stroke-width:2px")
 }

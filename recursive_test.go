@@ -11,28 +11,37 @@ func TestFindGoModFiles(t *testing.T) {
 	// Create a temp directory tree with go.mod files
 	root := t.TempDir()
 
+	// helper to create directories and files
+	writeFile := func(path string, data []byte) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	// Root go.mod
-	os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/root\n"), 0644)
+	writeFile(filepath.Join(root, "go.mod"), []byte("module example.com/root\n"))
 
 	// Subdirectory with go.mod
-	os.MkdirAll(filepath.Join(root, "api"), 0755)
-	os.WriteFile(filepath.Join(root, "api", "go.mod"), []byte("module example.com/root/api\n"), 0644)
+	writeFile(filepath.Join(root, "api", "go.mod"), []byte("module example.com/root/api\n"))
 
-	// Nested subdirectory with go.mod
-	os.MkdirAll(filepath.Join(root, "sdk", "v2"), 0755)
-	os.WriteFile(filepath.Join(root, "sdk", "go.mod"), []byte("module example.com/root/sdk\n"), 0644)
+	// Nested subdirectory with go.mod (extra nested dir for structure)
+	if err := os.MkdirAll(filepath.Join(root, "sdk", "v2"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(filepath.Join(root, "sdk", "go.mod"), []byte("module example.com/root/sdk\n"))
 
 	// vendor/ should be skipped
-	os.MkdirAll(filepath.Join(root, "vendor", "lib"), 0755)
-	os.WriteFile(filepath.Join(root, "vendor", "lib", "go.mod"), []byte("module vendor/lib\n"), 0644)
+	writeFile(filepath.Join(root, "vendor", "lib", "go.mod"), []byte("module vendor/lib\n"))
 
 	// testdata/ should be skipped
-	os.MkdirAll(filepath.Join(root, "testdata"), 0755)
-	os.WriteFile(filepath.Join(root, "testdata", "go.mod"), []byte("module testdata/mod\n"), 0644)
+	writeFile(filepath.Join(root, "testdata", "go.mod"), []byte("module testdata/mod\n"))
 
 	// Hidden directory should be skipped
-	os.MkdirAll(filepath.Join(root, ".hidden"), 0755)
-	os.WriteFile(filepath.Join(root, ".hidden", "go.mod"), []byte("module hidden/mod\n"), 0644)
+	writeFile(filepath.Join(root, ".hidden", "go.mod"), []byte("module hidden/mod\n"))
 
 	paths, err := findGoModFiles(root)
 	if err != nil {

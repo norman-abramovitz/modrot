@@ -132,7 +132,7 @@ func TestResolveViaProxy(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.status)
 				if tt.response != "" {
-					fmt.Fprint(w, tt.response)
+					_, _ = fmt.Fprint(w, tt.response)
 				}
 			}))
 			defer srv.Close()
@@ -178,7 +178,7 @@ func TestResolveViaMeta(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				fmt.Fprint(w, tt.html)
+				_, _ = fmt.Fprint(w, tt.html)
 			}))
 			defer srv.Close()
 
@@ -229,11 +229,7 @@ func splitFields(s string) []string {
 
 func splitFieldsN(s string, n int) []string {
 	if n < 0 {
-		var fields []string
-		for _, f := range splitAllFields(s) {
-			fields = append(fields, f)
-		}
-		return fields
+		return append([]string{}, splitAllFields(s)...)
 	}
 	return splitAllFields(s)[:n]
 }
@@ -260,7 +256,7 @@ func splitAllFields(s string) []string {
 func TestResolveOne(t *testing.T) {
 	t.Run("proxy hit", func(t *testing.T) {
 		proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"Version":"v1.60.0","Origin":{"VCS":"git","URL":"https://github.com/grpc/grpc-go"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v1.60.0","Origin":{"VCS":"git","URL":"https://github.com/grpc/grpc-go"}}`)
 		}))
 		defer proxy.Close()
 
@@ -288,7 +284,7 @@ func TestResolveOne(t *testing.T) {
 
 	t.Run("proxy no github origin", func(t *testing.T) {
 		proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"Version":"v0.20.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/text"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v0.20.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/text"}}`)
 		}))
 		defer proxy.Close()
 
@@ -305,11 +301,11 @@ func TestResolveVanityImports(t *testing.T) {
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/google.golang.org/grpc/@latest":
-			fmt.Fprint(w, `{"Version":"v1.60.0","Origin":{"VCS":"git","URL":"https://github.com/grpc/grpc-go"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v1.60.0","Origin":{"VCS":"git","URL":"https://github.com/grpc/grpc-go"}}`)
 		case "/go.uber.org/zap/@latest":
-			fmt.Fprint(w, `{"Version":"v1.27.0","Origin":{"VCS":"git","URL":"https://github.com/uber-go/zap"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v1.27.0","Origin":{"VCS":"git","URL":"https://github.com/uber-go/zap"}}`)
 		case "/golang.org/x/text/@latest":
-			fmt.Fprint(w, `{"Version":"v0.20.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/text"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v0.20.0","Origin":{"VCS":"git","URL":"https://go.googlesource.com/text"}}`)
 		default:
 			w.WriteHeader(404)
 		}
@@ -375,9 +371,9 @@ func TestResolveVanityImports_WorkerPool(t *testing.T) {
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/google.golang.org/grpc/@latest":
-			fmt.Fprint(w, `{"Version":"v1.60.0","Origin":{"VCS":"git","URL":"https://github.com/grpc/grpc-go"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v1.60.0","Origin":{"VCS":"git","URL":"https://github.com/grpc/grpc-go"}}`)
 		case "/go.uber.org/zap/@latest":
-			fmt.Fprint(w, `{"Version":"v1.27.0","Origin":{"VCS":"git","URL":"https://github.com/uber-go/zap"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v1.27.0","Origin":{"VCS":"git","URL":"https://github.com/uber-go/zap"}}`)
 		default:
 			w.WriteHeader(404)
 		}
@@ -425,7 +421,7 @@ func TestResolveAcrossModules_WorkerPool(t *testing.T) {
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/google.golang.org/grpc/@latest":
-			fmt.Fprint(w, `{"Version":"v1.60.0","Origin":{"VCS":"git","URL":"https://github.com/grpc/grpc-go"}}`)
+			_, _ = fmt.Fprint(w, `{"Version":"v1.60.0","Origin":{"VCS":"git","URL":"https://github.com/grpc/grpc-go"}}`)
 		default:
 			w.WriteHeader(404)
 		}

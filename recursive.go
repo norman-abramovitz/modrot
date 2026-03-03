@@ -117,11 +117,11 @@ func getDeprecatedModules(allModules []Module, directOnly bool, deprecatedMode b
 func runRecursive(rootDir string, cfg runConfig) int {
 	gomodPaths, err := findGoModFiles(rootDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error scanning directory: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error scanning directory: %v\n", err)
 		return 2
 	}
 	if len(gomodPaths) == 0 {
-		fmt.Fprintf(os.Stderr, "No go.mod files found in %s\n", rootDir)
+		_, _ = fmt.Fprintf(os.Stderr, "No go.mod files found in %s\n", rootDir)
 		return 2
 	}
 
@@ -130,7 +130,7 @@ func runRecursive(rootDir string, cfg runConfig) int {
 	for _, gp := range gomodPaths {
 		allMods, err := ParseGoMod(gp)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: skipping %s: %v\n", gp, err)
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: skipping %s: %v\n", gp, err)
 			continue
 		}
 		modName, _ := ModuleName(gp)
@@ -147,7 +147,7 @@ func runRecursive(rootDir string, cfg runConfig) int {
 	if cfg.resolveMode {
 		resolved := resolveAcrossModules(modules)
 		if resolved > 0 {
-			fmt.Fprintf(os.Stderr, "Resolved %d non-GitHub modules to GitHub repos.\n", resolved)
+			_, _ = fmt.Fprintf(os.Stderr, "Resolved %d non-GitHub modules to GitHub repos.\n", resolved)
 		}
 	}
 
@@ -155,7 +155,7 @@ func runRecursive(rootDir string, cfg runConfig) int {
 	if cfg.deprecatedMode {
 		count := checkDeprecationsAcrossModules(modules)
 		if count > 0 {
-			fmt.Fprintf(os.Stderr, "Found %d deprecated %s.\n", count, pluralize(count, "module", "modules"))
+			_, _ = fmt.Fprintf(os.Stderr, "Found %d deprecated %s.\n", count, pluralize(count, "module", "modules"))
 		}
 	}
 
@@ -180,21 +180,21 @@ func runRecursive(rootDir string, cfg runConfig) int {
 	enrichAcrossModules(modules)
 
 	if len(modules) == 0 {
-		fmt.Fprintf(os.Stderr, "No valid go.mod files found.\n")
+		_, _ = fmt.Fprintf(os.Stderr, "No valid go.mod files found.\n")
 		return 2
 	}
 
 	if len(allGitHub) == 0 {
-		fmt.Fprintf(os.Stderr, "No GitHub modules found across %d go.mod files.\n", len(modules))
+		_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found across %d go.mod files.\n", len(modules))
 		return 0
 	}
 
-	fmt.Fprintf(os.Stderr, "Found %d go.mod files, checking %d unique GitHub repos...\n", len(modules), len(allGitHub))
+	_, _ = fmt.Fprintf(os.Stderr, "Found %d go.mod files, checking %d unique GitHub repos...\n", len(modules), len(allGitHub))
 
 	// Query GitHub once for all unique repos
 	globalResults, err := CheckRepos(allGitHub, cfg.workers)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 2
 	}
 
@@ -240,7 +240,7 @@ func runRecursiveQuickfix(modules []moduleInfo, statusMap map[string]RepoStatus,
 			hasAnyArchived = true
 			fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
+				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
 				continue
 			}
 			PrintFilesPlain(results, fm)
@@ -275,7 +275,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 			if cfg.filesMode && len(archivedPaths) > 0 {
 				fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
+					_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
 				} else {
 					fileMatches = fm
 				}
@@ -283,7 +283,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 
 			graph, err := parseModGraph(filepath.Dir(mi.gomodPath), cfg.goVersion)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph for %s: %v\n", mi.relPath, err)
+				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph for %s: %v\n", mi.relPath, err)
 				graph = map[string][]string{}
 			}
 
@@ -299,7 +299,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		enc.Encode(out)
+		_ = enc.Encode(out)
 	} else {
 		out := RecursiveJSONOutput{Modules: []RecursiveJSONEntry{}}
 
@@ -321,7 +321,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 			if cfg.filesMode && len(archivedPaths) > 0 {
 				fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
+					_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
 				} else {
 					fileMatches = fm
 				}
@@ -340,7 +340,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		enc.Encode(out)
+		_ = enc.Encode(out)
 	}
 
 	return hasAnyArchived
@@ -359,7 +359,7 @@ func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus,
 			var ignored []RepoStatus
 			results, ignored = il.FilterResults(results)
 			if len(ignored) > 0 {
-				fmt.Fprintf(os.Stderr, "Ignored %d %s.\n", len(ignored), pluralize(len(ignored), "module", "modules"))
+				_, _ = fmt.Fprintf(os.Stderr, "Ignored %d %s.\n", len(ignored), pluralize(len(ignored), "module", "modules"))
 			}
 		}
 
@@ -370,12 +370,12 @@ func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus,
 		}
 
 		if i > 0 {
-			fmt.Fprintln(os.Stdout)
+			_, _ = fmt.Fprintln(os.Stdout)
 		}
-		fmt.Fprintf(os.Stdout, "# %s — %s (%s)\n\n", mi.relPath, mi.moduleName, cfg.goToolchain)
+		_, _ = fmt.Fprintf(os.Stdout, "# %s — %s (%s)\n\n", mi.relPath, mi.moduleName, cfg.goToolchain)
 
 		if len(mi.githubModules) == 0 {
-			fmt.Fprintf(os.Stdout, "No GitHub modules found.\n")
+			_, _ = fmt.Fprintf(os.Stdout, "No GitHub modules found.\n")
 			continue
 		}
 
@@ -383,7 +383,7 @@ func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus,
 		if cfg.filesMode && hasArchived {
 			fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not scan imports: %v\n", err)
+				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports: %v\n", err)
 			} else {
 				fileMatches = fm
 			}
@@ -395,7 +395,7 @@ func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus,
 		if cfg.treeMode && hasArchived {
 			graph, err := parseModGraph(filepath.Dir(mi.gomodPath), cfg.goVersion)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", err)
+				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", err)
 			} else {
 				PrintMarkdownTree(results, graph, mi.allModules, fileMatches)
 				if len(stale) > 0 {
@@ -436,7 +436,7 @@ func runRecursiveText(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 			var ignored []RepoStatus
 			results, ignored = il.FilterResults(results)
 			if len(ignored) > 0 {
-				fmt.Fprintf(os.Stderr, "Ignored %d %s.\n", len(ignored), pluralize(len(ignored), "module", "modules"))
+				_, _ = fmt.Fprintf(os.Stderr, "Ignored %d %s.\n", len(ignored), pluralize(len(ignored), "module", "modules"))
 			}
 		}
 
@@ -447,12 +447,12 @@ func runRecursiveText(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 		}
 
 		if i > 0 {
-			fmt.Fprintln(os.Stderr)
+			_, _ = fmt.Fprintln(os.Stderr)
 		}
-		fmt.Fprintf(os.Stderr, "=== %s — %s (%s) ===\n", mi.relPath, mi.moduleName, cfg.goToolchain)
+		_, _ = fmt.Fprintf(os.Stderr, "=== %s — %s (%s) ===\n", mi.relPath, mi.moduleName, cfg.goToolchain)
 
 		if len(mi.githubModules) == 0 {
-			fmt.Fprintf(os.Stderr, "No GitHub modules found.\n")
+			_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found.\n")
 			continue
 		}
 
@@ -460,7 +460,7 @@ func runRecursiveText(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 		if cfg.filesMode && hasArchived {
 			fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not scan imports: %v\n", err)
+				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports: %v\n", err)
 			} else {
 				fileMatches = fm
 			}
@@ -472,7 +472,7 @@ func runRecursiveText(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 		if cfg.treeMode && hasArchived {
 			graph, err := parseModGraph(filepath.Dir(mi.gomodPath), cfg.goVersion)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", err)
+				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", err)
 			} else {
 				if cfg.outputFormat == "mermaid" {
 					PrintMermaid(results, graph, mi.allModules)

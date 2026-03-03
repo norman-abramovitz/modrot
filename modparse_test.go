@@ -165,7 +165,9 @@ require github.com/foo/bar v1.0.0
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "go.mod")
-	os.WriteFile(path, []byte(gomod), 0644)
+	if err := os.WriteFile(path, []byte(gomod), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	name, err := ModuleName(path)
 	if err != nil {
@@ -192,7 +194,9 @@ require github.com/foo/bar v1.0.0
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "go.mod")
-	os.WriteFile(path, []byte(gomod), 0644)
+	if err := os.WriteFile(path, []byte(gomod), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	name, goVer, err := GoModInfo(path)
 	if err != nil {
@@ -213,7 +217,9 @@ require github.com/foo/bar v1.0.0
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "go.mod")
-	os.WriteFile(path, []byte(gomod), 0644)
+	if err := os.WriteFile(path, []byte(gomod), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	name, goVer, err := GoModInfo(path)
 	if err != nil {
@@ -242,7 +248,9 @@ require github.com/foo/bar v1.0.0
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "go.mod")
-	os.WriteFile(path, []byte(gomod), 0644)
+	if err := os.WriteFile(path, []byte(gomod), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err := ModuleName(path)
 	if err == nil {
@@ -258,7 +266,9 @@ require github.com/foo/bar v1.0.0
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "go.mod")
-	os.WriteFile(path, []byte(gomod), 0644)
+	if err := os.WriteFile(path, []byte(gomod), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	name, goVer, err := GoModInfo(path)
 	if err != nil {

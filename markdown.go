@@ -11,16 +11,16 @@ import (
 // printMarkdownTable writes a GitHub-flavored Markdown table.
 func printMarkdownTable(w io.Writer, headers []string, rows [][]string) {
 	// Header row
-	fmt.Fprintf(w, "| %s |\n", strings.Join(headers, " | "))
+	_, _ = fmt.Fprintf(w, "| %s |\n", strings.Join(headers, " | "))
 	// Separator row
 	seps := make([]string, len(headers))
 	for i := range seps {
 		seps[i] = "---"
 	}
-	fmt.Fprintf(w, "| %s |\n", strings.Join(seps, " | "))
+	_, _ = fmt.Fprintf(w, "| %s |\n", strings.Join(seps, " | "))
 	// Data rows
 	for _, row := range rows {
-		fmt.Fprintf(w, "| %s |\n", strings.Join(row, " | "))
+		_, _ = fmt.Fprintf(w, "| %s |\n", strings.Join(row, " | "))
 	}
 }
 
@@ -53,7 +53,7 @@ func PrintMarkdown(results []RepoStatus, nonGitHubModules []Module, showAll bool
 	totalChecked := len(results)
 
 	if len(archived) > 0 {
-		fmt.Fprintf(os.Stdout, "## ARCHIVED DEPENDENCIES (%d of %d github.com modules)\n\n", len(archived), totalChecked)
+		_, _ = fmt.Fprintf(os.Stdout, "## ARCHIVED DEPENDENCIES (%d of %d github.com modules)\n\n", len(archived), totalChecked)
 
 		var headers []string
 		if durationEnabled {
@@ -85,27 +85,27 @@ func PrintMarkdown(results []RepoStatus, nonGitHubModules []Module, showAll bool
 		}
 
 		if len(archivedDirect) > 0 && len(archivedIndirect) > 0 {
-			fmt.Fprintf(os.Stdout, "### Direct (%d)\n\n", len(archivedDirect))
+			_, _ = fmt.Fprintf(os.Stdout, "### Direct (%d)\n\n", len(archivedDirect))
 			printMarkdownTable(os.Stdout, headers, buildRows(archivedDirect))
-			fmt.Fprintf(os.Stdout, "\n### Indirect (%d)\n\n", len(archivedIndirect))
+			_, _ = fmt.Fprintf(os.Stdout, "\n### Indirect (%d)\n\n", len(archivedIndirect))
 			printMarkdownTable(os.Stdout, headers, buildRows(archivedIndirect))
 		} else {
 			all := append(archivedDirect, archivedIndirect...)
 			printMarkdownTable(os.Stdout, headers, buildRows(all))
 		}
 	} else {
-		fmt.Fprintf(os.Stdout, "No archived dependencies found among %d github.com modules.\n", totalChecked)
+		_, _ = fmt.Fprintf(os.Stdout, "No archived dependencies found among %d github.com modules.\n", totalChecked)
 	}
 
 	if len(notFound) > 0 {
-		fmt.Fprintf(os.Stdout, "\n## NOT FOUND (%d modules)\n\n", len(notFound))
+		_, _ = fmt.Fprintf(os.Stdout, "\n## NOT FOUND (%d modules)\n\n", len(notFound))
 		for _, r := range notFound {
-			fmt.Fprintf(os.Stdout, "- %s — %s\n", r.Module.Path, r.Error)
+			_, _ = fmt.Fprintf(os.Stdout, "- %s — %s\n", r.Module.Path, r.Error)
 		}
 	}
 
 	if showAll && len(active) > 0 {
-		fmt.Fprintf(os.Stdout, "\n## ACTIVE DEPENDENCIES (%d modules)\n\n", len(active))
+		_, _ = fmt.Fprintf(os.Stdout, "\n## ACTIVE DEPENDENCIES (%d modules)\n\n", len(active))
 		sort.Slice(active, func(i, j int) bool {
 			return active[i].Module.Path < active[j].Module.Path
 		})
@@ -127,7 +127,7 @@ func PrintMarkdown(results []RepoStatus, nonGitHubModules []Module, showAll bool
 		sort.Slice(deps, func(i, j int) bool {
 			return deps[i].Path < deps[j].Path
 		})
-		fmt.Fprintf(os.Stdout, "\n## DEPRECATED MODULES (%d %s)\n\n", len(deps), pluralize(len(deps), "module", "modules"))
+		_, _ = fmt.Fprintf(os.Stdout, "\n## DEPRECATED MODULES (%d %s)\n\n", len(deps), pluralize(len(deps), "module", "modules"))
 		headers := []string{"Module", "Version", "Direct", "Message"}
 		var rows [][]string
 		for _, m := range deps {
@@ -150,7 +150,7 @@ func PrintMarkdownSkipped(modules []Module) {
 	sort.Slice(modules, func(i, j int) bool {
 		return modules[i].Path < modules[j].Path
 	})
-	fmt.Fprintf(os.Stdout, "\n## NON-GITHUB MODULES (%d non-GitHub %s)\n\n",
+	_, _ = fmt.Fprintf(os.Stdout, "\n## NON-GITHUB MODULES (%d non-GitHub %s)\n\n",
 		len(modules), pluralize(len(modules), "module", "modules"))
 	headers := []string{"Module", "Version", "Latest", "Direct", "Published", "Source"}
 	var rows [][]string
@@ -178,7 +178,7 @@ func PrintMarkdownFiles(results []RepoStatus, fileMatches map[string][]FileMatch
 	}
 	sort.Strings(archivedPaths)
 
-	fmt.Fprintf(os.Stdout, "\n## SOURCE FILES IMPORTING ARCHIVED MODULES\n")
+	_, _ = fmt.Fprintf(os.Stdout, "\n## SOURCE FILES IMPORTING ARCHIVED MODULES\n")
 
 	for _, modPath := range archivedPaths {
 		matches := fileMatches[modPath]
@@ -186,9 +186,9 @@ func PrintMarkdownFiles(results []RepoStatus, fileMatches map[string][]FileMatch
 		for _, m := range matches {
 			uniqueFiles[m.File] = true
 		}
-		fmt.Fprintf(os.Stdout, "\n### %s (%d %s)\n\n", modPath, len(uniqueFiles), pluralize(len(uniqueFiles), "file", "files"))
+		_, _ = fmt.Fprintf(os.Stdout, "\n### %s (%d %s)\n\n", modPath, len(uniqueFiles), pluralize(len(uniqueFiles), "file", "files"))
 		for _, m := range matches {
-			fmt.Fprintf(os.Stdout, "- `%s:%d`\n", m.File, m.Line)
+			_, _ = fmt.Fprintf(os.Stdout, "- `%s:%d`\n", m.File, m.Line)
 		}
 	}
 }
@@ -201,7 +201,7 @@ func PrintMarkdownStale(stale []RepoStatus) {
 	sort.Slice(stale, func(i, j int) bool {
 		return stale[i].Module.Path < stale[j].Module.Path
 	})
-	fmt.Fprintf(os.Stdout, "\n## STALE DEPENDENCIES (%d %s not pushed in >%s)\n\n",
+	_, _ = fmt.Fprintf(os.Stdout, "\n## STALE DEPENDENCIES (%d %s not pushed in >%s)\n\n",
 		len(stale), pluralize(len(stale), "module", "modules"), formatThreshold())
 
 	var headers []string
@@ -230,28 +230,28 @@ func PrintMarkdownTree(results []RepoStatus, graph map[string][]string, allModul
 	entries, ctx := buildTree(results, graph, allModules)
 
 	if entries == nil {
-		fmt.Fprintf(os.Stdout, "No archived dependencies found.\n")
+		_, _ = fmt.Fprintf(os.Stdout, "No archived dependencies found.\n")
 		return
 	}
 
-	fmt.Fprintf(os.Stdout, "## DEPENDENCY TREE\n\n")
+	_, _ = fmt.Fprintf(os.Stdout, "## DEPENDENCY TREE\n\n")
 
 	for _, e := range entries {
 		if ctx.archivedPaths[e.directPath] {
 			if rs, ok := ctx.getStatus(e.directPath); ok {
-				fmt.Fprintf(os.Stdout, "- **%s** `[ARCHIVED %s]`", formatTreeLabel(e.directPath, ctx.versionByPath[e.directPath]), fmtDate(rs.ArchivedAt))
+				_, _ = fmt.Fprintf(os.Stdout, "- **%s** `[ARCHIVED %s]`", formatTreeLabel(e.directPath, ctx.versionByPath[e.directPath]), fmtDate(rs.ArchivedAt))
 			} else {
-				fmt.Fprintf(os.Stdout, "- **%s** `[ARCHIVED]`", e.directPath)
+				_, _ = fmt.Fprintf(os.Stdout, "- **%s** `[ARCHIVED]`", e.directPath)
 			}
 		} else {
 			ver := ctx.versionByPath[e.directPath]
 			if ver != "" {
-				fmt.Fprintf(os.Stdout, "- %s@%s", e.directPath, ver)
+				_, _ = fmt.Fprintf(os.Stdout, "- %s@%s", e.directPath, ver)
 			} else {
-				fmt.Fprintf(os.Stdout, "- %s", e.directPath)
+				_, _ = fmt.Fprintf(os.Stdout, "- %s", e.directPath)
 			}
 		}
-		fmt.Fprintln(os.Stdout)
+		_, _ = fmt.Fprintln(os.Stdout)
 
 		seen := make(map[string]bool)
 		for _, a := range e.archived {
@@ -260,9 +260,9 @@ func PrintMarkdownTree(results []RepoStatus, graph map[string][]string, allModul
 			}
 			seen[a] = true
 			if rs, ok := ctx.getStatus(a); ok {
-				fmt.Fprintf(os.Stdout, "  - **%s** `[ARCHIVED %s]`\n", formatTreeLabel(a, ctx.versionByPath[a]), fmtDate(rs.ArchivedAt))
+				_, _ = fmt.Fprintf(os.Stdout, "  - **%s** `[ARCHIVED %s]`\n", formatTreeLabel(a, ctx.versionByPath[a]), fmtDate(rs.ArchivedAt))
 			} else {
-				fmt.Fprintf(os.Stdout, "  - **%s** `[ARCHIVED]`\n", a)
+				_, _ = fmt.Fprintf(os.Stdout, "  - **%s** `[ARCHIVED]`\n", a)
 			}
 		}
 	}
