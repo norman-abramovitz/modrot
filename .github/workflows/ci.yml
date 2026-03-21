@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - ".github/workflows/ci.yml"
+
+env:
+  MODROT_SKIP_CI: ${{ vars.MODROT_SKIP_CI || 'false' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: ${{ vars.MODROT_SKIP_CI != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check (fmt + vet)
+        run: make check
+
+      - name: Test
+        run: make test
+
+      - name: Lint
+        run: make lint

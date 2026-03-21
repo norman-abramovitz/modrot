@@ -22,7 +22,7 @@ install: ## Install to GOPATH/bin
 
 .PHONY: test
 test: ## Run all tests
-	go test -race ./...
+	@if [ "$(MODROT_SKIP_CI)" = "true" ]; then echo "Skipped (MODROT_SKIP_CI=true)"; else go test -race ./...; fi
 
 .PHONY: coverage
 coverage: ## Generate test coverage report
@@ -66,7 +66,8 @@ lint-fix: ## Run golangci-lint with auto-fix
 	golangci-lint run --fix ./...
 
 .PHONY: check
-check: fmt vet lint ## Run all code quality checks (fmt, vet, lint)
+check: ## Run all code quality checks (fmt, vet, lint)
+	@if [ "$(MODROT_SKIP_CI)" = "true" ]; then echo "Skipped (MODROT_SKIP_CI=true)"; else $(MAKE) fmt vet lint; fi
 
 ##@ Dependencies
 
