@@ -16,7 +16,7 @@ func main() {
 	// since they support optional values which Go's flag package cannot handle.
 	extractDurationFlag()
 	extractStaleFlag()
-	extractFreshnessFlag()
+	extractAgeFlag()
 
 	// Reorder args so flags can appear after the positional argument.
 	// Go's flag package stops parsing at the first non-flag argument.
@@ -39,6 +39,7 @@ func main() {
 	// Analysis flags
 	resolveFlag := flag.Bool("resolve", false, "Resolve vanity import paths (e.g. google.golang.org/grpc) to GitHub repos")
 	deprecatedFlag := flag.Bool("deprecated", false, "Check for deprecated modules via the Go module proxy")
+	freshnessFlag := flag.Bool("freshness", false, "Show latest available version and how far behind each dependency is")
 
 	// Display flags
 	allFlag := flag.Bool("all", false, "Show all modules, not just archived ones")
@@ -84,8 +85,9 @@ Filtering:
 Analysis:
   --resolve             Resolve vanity import paths to GitHub repos (recommended)
   --deprecated          Check for deprecated modules via the Go module proxy
-  --freshness[=THRESHOLD]  Show version freshness; with threshold, only deps older than THRESHOLD
-                          (e.g. --freshness=18m, --freshness=1y6m)
+  --freshness           Show latest available version and how far behind each dependency is
+  --age[=THRESHOLD]     Show how old each dependency's version is (today minus publish date)
+                          With threshold, show OUTDATED section (e.g. --age=18m, --age=1y6m)
   --duration[=DATE]     Show how long dependencies have been archived (default: today)
 
 Display:
@@ -115,6 +117,7 @@ Examples:
   modrot --direct-only --stale               Verify no archived or stale deps
   modrot --resolve --deprecated --stale      Full dependency health check
   modrot --freshness --all                   Show version freshness for all deps
+  modrot --age=18m --direct-only             Find deps older than 18 months
   modrot /path/to/pkg/go.mod --all --stale   Evaluate a package before adopting
   modrot --tree --files                      ASCII dependency tree and affected files
   modrot --markdown --all --deprecated       Markdown for release notes
@@ -150,6 +153,11 @@ Examples:
 	// Mermaid implies --tree
 	if outputFormat == "mermaid" {
 		*treeFlag = true
+	}
+
+	// Set freshness mode from flag
+	if *freshnessFlag {
+		freshnessEnabled = true
 	}
 
 	// Set date format
@@ -198,6 +206,7 @@ Examples:
 			resolveMode:    *resolveFlag,
 			deprecatedMode: *deprecatedFlag,
 			freshnessMode:  freshnessEnabled,
+			ageMode:        ageEnabled,
 			goVersion:      *goVersionFlag,
 			goToolchain:    goToolchainVersion(),
 			durationMode:   durationEnabled,
@@ -254,8 +263,8 @@ Examples:
 		EnrichNonGitHub(nonGitHubModules, 20)
 	}
 
-	// Enrich all modules with freshness data (skips already-enriched)
-	if freshnessEnabled {
+	// Enrich all modules with version data (skips already-enriched)
+	if freshnessEnabled || ageEnabled {
 		EnrichFreshness(allModules, 20)
 	}
 
@@ -372,8 +381,8 @@ Examples:
 				if len(nonGitHubModules) > 0 {
 					PrintSkippedTable(nonGitHubModules)
 				}
-				if freshnessEnabled {
-					PrintFreshnessTable(results, nonGitHubModules)
+				if ageEnabled {
+					PrintOutdatedTable(results, nonGitHubModules)
 				}
 				if *showIgnoredFlag {
 					PrintIgnoredTable(ignoredResults)
@@ -412,8 +421,8 @@ Examples:
 		}
 	}
 
-	if freshnessEnabled {
-		PrintFreshnessTable(results, nonGitHubModules)
+	if ageEnabled {
+		PrintOutdatedTable(results, nonGitHubModules)
 	}
 
 	if *showIgnoredFlag {
@@ -547,27 +556,27 @@ func extractStaleFlag() {
 	os.Args = filtered
 }
 
-// extractFreshnessFlag scans os.Args for --freshness or -freshness, which supports
-// an optional threshold value (--freshness or --freshness=1y6m). When a threshold
+// extractAgeFlag scans os.Args for --age or -age, which supports
+// an optional threshold value (--age or --age=18m). When a threshold
 // is given, only dependencies with a version publish date older than the threshold
-// are shown in freshness output.
-func extractFreshnessFlag() {
+// are shown in the OUTDATED section.
+func extractAgeFlag() {
 	var filtered []string
 	for _, arg := range os.Args {
 		switch {
-		case arg == "--freshness" || arg == "-freshness":
-			freshnessEnabled = true
-		case strings.HasPrefix(arg, "--freshness=") || strings.HasPrefix(arg, "-freshness="):
-			freshnessEnabled = true
+		case arg == "--age" || arg == "-age":
+			ageEnabled = true
+		case strings.HasPrefix(arg, "--age=") || strings.HasPrefix(arg, "-age="):
+			ageEnabled = true
 			threshStr := arg[strings.Index(arg, "=")+1:]
 			y, m, d, err := parseThreshold(threshStr)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: invalid freshness threshold %q (expected e.g. 1y6m, 18m, 180d)\n", threshStr)
+				fmt.Fprintf(os.Stderr, "Error: invalid age threshold %q (expected e.g. 1y6m, 18m, 180d)\n", threshStr)
 				os.Exit(2)
 			}
-			freshnessYears = y
-			freshnessMonths = m
-			freshnessDays = d
+			ageYears = y
+			ageMonths = m
+			ageDays = d
 		default:
 			filtered = append(filtered, arg)
 		}

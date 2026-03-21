@@ -6,20 +6,23 @@ import (
 	"time"
 )
 
-// freshnessEnabled controls the --freshness feature.
-// freshnessYears/Months/Days hold the optional threshold.
+// freshnessEnabled controls the --freshness feature (LATEST + BEHIND columns).
+var freshnessEnabled bool
+
+// ageEnabled controls the --age feature (AGE column).
+// ageYears/Months/Days hold the optional threshold for the OUTDATED section.
 var (
-	freshnessEnabled bool
-	freshnessYears   int
-	freshnessMonths  int
-	freshnessDays    int
+	ageEnabled bool
+	ageYears   int
+	ageMonths  int
+	ageDays    int
 )
 
-// formatVersionAge returns a compact duration string representing the time
+// formatBehind returns a compact duration string representing the time
 // between the current version's publish date and the latest version's
 // publish date (e.g. "2y4m"). Returns "-" when current == latest version,
 // and "" when data is unavailable.
-func formatVersionAge(m Module) string {
+func formatBehind(m Module) string {
 	if m.LatestVersion == "" {
 		return ""
 	}
@@ -29,39 +32,49 @@ func formatVersionAge(m Module) string {
 	if m.VersionTime.IsZero() || m.LatestTime.IsZero() {
 		return ""
 	}
-	return versionAgeDuration(m.VersionTime, m.LatestTime)
+	return compactDuration(m.VersionTime, m.LatestTime)
 }
 
-// exceedsFreshnessThreshold returns true if the module's version publish date
-// is older than the freshness threshold relative to now. Returns false if
+// formatAge returns a compact duration string representing the time
+// between the module's version publish date and today (e.g. "3y1m").
+// Returns "" when version time is unavailable.
+func formatAge(m Module) string {
+	if m.VersionTime.IsZero() {
+		return ""
+	}
+	return compactDuration(m.VersionTime, time.Now())
+}
+
+// exceedsAgeThreshold returns true if the module's version publish date
+// is older than the age threshold relative to now. Returns false if
 // no threshold is set (all zeros) or if version time is unavailable.
-func exceedsFreshnessThreshold(m Module) bool {
-	if freshnessYears == 0 && freshnessMonths == 0 && freshnessDays == 0 {
+func exceedsAgeThreshold(m Module) bool {
+	if ageYears == 0 && ageMonths == 0 && ageDays == 0 {
 		return true // no threshold → show all
 	}
 	if m.VersionTime.IsZero() {
 		return false
 	}
-	return exceedsThreshold(m.VersionTime, freshnessYears, freshnessMonths, freshnessDays)
+	return exceedsThreshold(m.VersionTime, ageYears, ageMonths, ageDays)
 }
 
-// formatFreshnessThreshold formats the threshold as a compact string for display.
-func formatFreshnessThreshold() string {
+// formatAgeThreshold formats the threshold as a compact string for display.
+func formatAgeThreshold() string {
 	var parts []string
-	if freshnessYears > 0 {
-		parts = append(parts, fmt.Sprintf("%dy", freshnessYears))
+	if ageYears > 0 {
+		parts = append(parts, fmt.Sprintf("%dy", ageYears))
 	}
-	if freshnessMonths > 0 {
-		parts = append(parts, fmt.Sprintf("%dm", freshnessMonths))
+	if ageMonths > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", ageMonths))
 	}
-	if freshnessDays > 0 {
-		parts = append(parts, fmt.Sprintf("%dd", freshnessDays))
+	if ageDays > 0 {
+		parts = append(parts, fmt.Sprintf("%dd", ageDays))
 	}
 	return strings.Join(parts, "")
 }
 
-// versionAgeDuration computes a compact duration string between two times.
-func versionAgeDuration(from, to time.Time) string {
+// compactDuration computes a compact duration string between two times.
+func compactDuration(from, to time.Time) string {
 	if to.Before(from) || to.Equal(from) {
 		return "-"
 	}

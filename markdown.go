@@ -77,7 +77,7 @@ func PrintMarkdown(results []RepoStatus, nonGitHubModules []Module, showAll bool
 				if latest != "" && latest == r.Module.Version {
 					latest = "-"
 				}
-				behind := formatVersionAge(r.Module)
+				behind := formatBehind(r.Module)
 				if durationEnabled && freshnessEnabled {
 					rows = append(rows, []string{
 						r.Module.Path, r.Module.Version, direct,
@@ -145,7 +145,7 @@ func PrintMarkdown(results []RepoStatus, nonGitHubModules []Module, showAll bool
 				if latest != "" && latest == r.Module.Version {
 					latest = "-"
 				}
-				behind := formatVersionAge(r.Module)
+				behind := formatBehind(r.Module)
 				rows = append(rows, []string{r.Module.Path, r.Module.Version, direct, fmtDate(r.PushedAt), latest, behind})
 			} else {
 				rows = append(rows, []string{r.Module.Path, r.Module.Version, direct, fmtDate(r.PushedAt)})
@@ -202,7 +202,7 @@ func PrintMarkdownSkipped(modules []Module) {
 			latest = "-"
 		}
 		if freshnessEnabled {
-			behind := formatVersionAge(m)
+			behind := formatBehind(m)
 			rows = append(rows, []string{m.Path, m.Version, latest, behind, direct, fmtDate(m.VersionTime), m.SourceURL})
 		} else {
 			rows = append(rows, []string{m.Path, m.Version, latest, direct, fmtDate(m.VersionTime), m.SourceURL})
@@ -267,7 +267,7 @@ func PrintMarkdownStale(stale []RepoStatus) {
 		if latest != "" && latest == r.Module.Version {
 			latest = "-"
 		}
-		behind := formatVersionAge(r.Module)
+		behind := formatBehind(r.Module)
 		if durationEnabled && freshnessEnabled {
 			rows = append(rows, []string{r.Module.Path, r.Module.Version, direct, fmtDate(r.PushedAt), formatDurationShort(r.PushedAt), latest, behind})
 		} else if durationEnabled {

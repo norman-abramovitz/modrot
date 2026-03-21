@@ -20,6 +20,7 @@ type runConfig struct {
 	resolveMode    bool
 	deprecatedMode bool
 	freshnessMode  bool
+	ageMode        bool
 	goVersion      string
 	goToolchain    string // e.g. "go1.23.4" from `go version`
 	durationMode   bool

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestFormatVersionAge(t *testing.T) {
+func TestFormatBehind(t *testing.T) {
 	tests := []struct {
 		name string
 		m    Module
@@ -76,15 +76,15 @@ func TestFormatVersionAge(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatVersionAge(tt.m)
+			got := formatBehind(tt.m)
 			if got != tt.want {
-				t.Errorf("formatVersionAge() = %q, want %q", got, tt.want)
+				t.Errorf("formatBehind() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestVersionAgeDuration(t *testing.T) {
+func TestCompactDuration(t *testing.T) {
 	tests := []struct {
 		name string
 		from time.Time
@@ -119,9 +119,9 @@ func TestVersionAgeDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := versionAgeDuration(tt.from, tt.to)
+			got := compactDuration(tt.from, tt.to)
 			if got != tt.want {
-				t.Errorf("versionAgeDuration() = %q, want %q", got, tt.want)
+				t.Errorf("compactDuration() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -234,55 +234,69 @@ func TestEnrichFreshnessShortCircuit(t *testing.T) {
 	}
 }
 
-func TestExceedsFreshnessThreshold(t *testing.T) {
-	savedY, savedM, savedD := freshnessYears, freshnessMonths, freshnessDays
-	defer func() { freshnessYears, freshnessMonths, freshnessDays = savedY, savedM, savedD }()
+func TestExceedsAgeThreshold(t *testing.T) {
+	savedY, savedM, savedD := ageYears, ageMonths, ageDays
+	defer func() { ageYears, ageMonths, ageDays = savedY, savedM, savedD }()
 
 	now := time.Now()
 
 	// No threshold set → always true
-	freshnessYears, freshnessMonths, freshnessDays = 0, 0, 0
+	ageYears, ageMonths, ageDays = 0, 0, 0
 	m := Module{VersionTime: now.AddDate(0, -1, 0)}
-	if !exceedsFreshnessThreshold(m) {
+	if !exceedsAgeThreshold(m) {
 		t.Error("no threshold should return true")
 	}
 
 	// 18m threshold, version 2 years old → exceeds
-	freshnessYears, freshnessMonths, freshnessDays = 0, 18, 0
+	ageYears, ageMonths, ageDays = 0, 18, 0
 	m = Module{VersionTime: now.AddDate(-2, 0, 0)}
-	if !exceedsFreshnessThreshold(m) {
+	if !exceedsAgeThreshold(m) {
 		t.Error("2y old version should exceed 18m threshold")
 	}
 
 	// 18m threshold, version 6 months old → does not exceed
 	m = Module{VersionTime: now.AddDate(0, -6, 0)}
-	if exceedsFreshnessThreshold(m) {
+	if exceedsAgeThreshold(m) {
 		t.Error("6m old version should not exceed 18m threshold")
 	}
 
 	// Zero version time → false
 	m = Module{}
-	if exceedsFreshnessThreshold(m) {
+	if exceedsAgeThreshold(m) {
 		t.Error("zero version time should return false")
 	}
 }
 
-func TestFormatFreshnessThreshold(t *testing.T) {
-	savedY, savedM, savedD := freshnessYears, freshnessMonths, freshnessDays
-	defer func() { freshnessYears, freshnessMonths, freshnessDays = savedY, savedM, savedD }()
+func TestFormatAgeThreshold(t *testing.T) {
+	savedY, savedM, savedD := ageYears, ageMonths, ageDays
+	defer func() { ageYears, ageMonths, ageDays = savedY, savedM, savedD }()
 
-	freshnessYears, freshnessMonths, freshnessDays = 1, 6, 0
-	if got := formatFreshnessThreshold(); got != "1y6m" {
-		t.Errorf("formatFreshnessThreshold() = %q, want %q", got, "1y6m")
+	ageYears, ageMonths, ageDays = 1, 6, 0
+	if got := formatAgeThreshold(); got != "1y6m" {
+		t.Errorf("formatAgeThreshold() = %q, want %q", got, "1y6m")
 	}
 
-	freshnessYears, freshnessMonths, freshnessDays = 0, 18, 0
-	if got := formatFreshnessThreshold(); got != "18m" {
-		t.Errorf("formatFreshnessThreshold() = %q, want %q", got, "18m")
+	ageYears, ageMonths, ageDays = 0, 18, 0
+	if got := formatAgeThreshold(); got != "18m" {
+		t.Errorf("formatAgeThreshold() = %q, want %q", got, "18m")
 	}
 
-	freshnessYears, freshnessMonths, freshnessDays = 0, 0, 0
-	if got := formatFreshnessThreshold(); got != "" {
-		t.Errorf("formatFreshnessThreshold() = %q, want empty", got)
+	ageYears, ageMonths, ageDays = 0, 0, 0
+	if got := formatAgeThreshold(); got != "" {
+		t.Errorf("formatAgeThreshold() = %q, want empty", got)
+	}
+}
+
+func TestFormatAge(t *testing.T) {
+	m := Module{VersionTime: time.Now().AddDate(-2, -3, -5)}
+	got := formatAge(m)
+	if got == "" || got == "-" {
+		t.Errorf("formatAge() should return a duration, got %q", got)
+	}
+
+	// Zero time → empty
+	m = Module{}
+	if got := formatAge(m); got != "" {
+		t.Errorf("formatAge(zero) = %q, want empty", got)
 	}
 }

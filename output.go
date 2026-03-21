@@ -216,7 +216,7 @@ func PrintStaleTable(stale []RepoStatus) {
 			if latest != "" && latest == r.Module.Version {
 				latest = "-"
 			}
-			behind := formatVersionAge(r.Module)
+			behind := formatBehind(r.Module)
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt, dur, latest, behind)
 		} else if durationEnabled {
 			dur := formatDurationShort(r.PushedAt)
@@ -226,7 +226,7 @@ func PrintStaleTable(stale []RepoStatus) {
 			if latest != "" && latest == r.Module.Version {
 				latest = "-"
 			}
-			behind := formatVersionAge(r.Module)
+			behind := formatBehind(r.Module)
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt, latest, behind)
 		} else {
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt)
@@ -235,22 +235,22 @@ func PrintStaleTable(stale []RepoStatus) {
 	_ = w.Flush()
 }
 
-// PrintFreshnessTable outputs a section listing modules whose version publish date
-// exceeds the freshness threshold. Only shown when --freshness=THRESHOLD is set.
-func PrintFreshnessTable(results []RepoStatus, nonGHModules []Module) {
-	threshold := formatFreshnessThreshold()
+// PrintOutdatedTable outputs a section listing modules whose version publish date
+// exceeds the age threshold. Only shown when --age=THRESHOLD is set.
+func PrintOutdatedTable(results []RepoStatus, nonGHModules []Module) {
+	threshold := formatAgeThreshold()
 	if threshold == "" {
 		return
 	}
 
 	var outdated []Module
 	for _, r := range results {
-		if exceedsFreshnessThreshold(r.Module) {
+		if exceedsAgeThreshold(r.Module) {
 			outdated = append(outdated, r.Module)
 		}
 	}
 	for _, m := range nonGHModules {
-		if exceedsFreshnessThreshold(m) {
+		if exceedsAgeThreshold(m) {
 			outdated = append(outdated, m)
 		}
 	}
@@ -263,7 +263,11 @@ func PrintFreshnessTable(results []RepoStatus, nonGHModules []Module) {
 	_, _ = fmt.Fprintf(os.Stderr, "\nOUTDATED DEPENDENCIES (%d %s with version published >%s ago)\n\n",
 		len(outdated), pluralize(len(outdated), "module", "modules"), threshold)
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tLATEST\tBEHIND\tDIRECT\tPUBLISHED")
+	if freshnessEnabled {
+		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tLATEST\tBEHIND\tAGE\tDIRECT\tPUBLISHED")
+	} else {
+		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tAGE\tDIRECT\tPUBLISHED")
+	}
 	for _, m := range outdated {
 		direct := "indirect"
 		if m.Direct {
@@ -273,12 +277,17 @@ func PrintFreshnessTable(results []RepoStatus, nonGHModules []Module) {
 		if latest == m.Version {
 			latest = "-"
 		}
-		behind := formatVersionAge(m)
+		behind := formatBehind(m)
+		age := formatAge(m)
 		published := ""
 		if !m.VersionTime.IsZero() {
 			published = fmtDate(m.VersionTime)
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, latest, behind, direct, published)
+		if freshnessEnabled {
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, latest, behind, age, direct, published)
+		} else {
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, age, direct, published)
+		}
 	}
 	_ = w.Flush()
 }
@@ -414,7 +423,7 @@ func PrintSkippedTable(modules []Module) {
 		}
 		published := fmtDate(m.VersionTime)
 		if freshnessEnabled {
-			behind := formatVersionAge(m)
+			behind := formatBehind(m)
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, latest, behind, direct, published, m.SourceURL)
 		} else {
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, latest, direct, published, m.SourceURL)
@@ -438,7 +447,7 @@ func printArchivedRows(w *tabwriter.Writer, archived []RepoStatus) {
 			if latest != "" && latest == r.Module.Version {
 				latest = "-"
 			}
-			behind := formatVersionAge(r.Module)
+			behind := formatBehind(r.Module)
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, dur, pushedAt, latest, behind)
 		} else if durationEnabled {
 			dur := formatDuration(r.ArchivedAt)
@@ -448,7 +457,7 @@ func printArchivedRows(w *tabwriter.Writer, archived []RepoStatus) {
 			if latest != "" && latest == r.Module.Version {
 				latest = "-"
 			}
-			behind := formatVersionAge(r.Module)
+			behind := formatBehind(r.Module)
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, pushedAt, latest, behind)
 		} else {
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, pushedAt)
@@ -546,7 +555,7 @@ func PrintTable(results []RepoStatus, nonGitHubModules []Module, showAll bool, d
 				if latest != "" && latest == r.Module.Version {
 					latest = "-"
 				}
-				behind := formatVersionAge(r.Module)
+				behind := formatBehind(r.Module)
 				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt, latest, behind)
 			} else {
 				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt)
@@ -697,7 +706,7 @@ func setJSONFreshness(jm *JSONModule, m Module) {
 	if m.LatestVersion != "" {
 		jm.LatestVersion = m.LatestVersion
 	}
-	if va := formatVersionAge(m); va != "" && va != "-" {
+	if va := formatBehind(m); va != "" && va != "-" {
 		jm.Behind = va
 	}
 }
@@ -735,7 +744,7 @@ func buildJSONOutput(results []RepoStatus, nonGitHubModules []Module, showAll bo
 			jsm.SourceURL = m.SourceURL
 		}
 		if freshnessEnabled {
-			if va := formatVersionAge(m); va != "" && va != "-" {
+			if va := formatBehind(m); va != "" && va != "-" {
 				jsm.Behind = va
 			}
 		}
@@ -1121,7 +1130,7 @@ func buildTreeJSONOutput(results []RepoStatus, graph map[string][]string, allMod
 			jsm.SourceURL = m.SourceURL
 		}
 		if freshnessEnabled {
-			if va := formatVersionAge(m); va != "" && va != "-" {
+			if va := formatBehind(m); va != "" && va != "-" {
 				jsm.Behind = va
 			}
 		}
