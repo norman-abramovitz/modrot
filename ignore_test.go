@@ -153,14 +153,7 @@ func TestBuildIgnoreList(t *testing.T) {
 
 func TestIgnoreList_IntegrationWithStaleAndSort(t *testing.T) {
 	// Verify that ignored modules don't appear in stale results either
-	savedStale := staleEnabled
-	savedY := staleYears
-	defer func() {
-		staleEnabled = savedStale
-		staleYears = savedY
-	}()
-	staleEnabled = true
-	staleYears = 1
+	cfg := &Config{Stale: StaleConfig{Enabled: true, Years: 1}, DateFmt: "2006-01-02"}
 
 	results := []RepoStatus{
 		{
@@ -177,7 +170,7 @@ func TestIgnoreList_IntegrationWithStaleAndSort(t *testing.T) {
 	il.Add("github.com/ignored/repo")
 	filtered, _ := il.FilterResults(results)
 
-	stale := filterStale(filtered)
+	stale := filterStale(cfg, filtered)
 	if len(stale) != 1 {
 		t.Fatalf("expected 1 stale after filtering, got %d", len(stale))
 	}

@@ -115,36 +115,32 @@ func TestFmtDate(t *testing.T) {
 	ts := time.Date(2024, 7, 22, 14, 30, 45, 0, time.UTC)
 
 	// Default date-only format
-	dateFmt = "2006-01-02"
-	if got := fmtDate(ts); got != "2024-07-22" {
+	cfg := &Config{DateFmt: "2006-01-02"}
+	if got := fmtDate(cfg, ts); got != "2024-07-22" {
 		t.Errorf("date-only: got %q, want %q", got, "2024-07-22")
 	}
 
 	// With time
-	dateFmt = "2006-01-02 15:04:05"
-	if got := fmtDate(ts); got != "2024-07-22 14:30:45" {
+	cfg = &Config{DateFmt: "2006-01-02 15:04:05"}
+	if got := fmtDate(cfg, ts); got != "2024-07-22 14:30:45" {
 		t.Errorf("with time: got %q, want %q", got, "2024-07-22 14:30:45")
 	}
 
 	// Zero time
-	if got := fmtDate(time.Time{}); got != "" {
+	if got := fmtDate(cfg, time.Time{}); got != "" {
 		t.Errorf("zero time: got %q, want empty", got)
 	}
-
-	// Reset
-	dateFmt = "2006-01-02"
 }
 
 func TestFormatArchivedLine_WithTime(t *testing.T) {
-	dateFmt = "2006-01-02 15:04:05"
-	defer func() { dateFmt = "2006-01-02" }()
+	cfg := &Config{DateFmt: "2006-01-02 15:04:05"}
 
 	rs := RepoStatus{
 		ArchivedAt: time.Date(2024, 7, 22, 14, 30, 45, 0, time.UTC),
 		PushedAt:   time.Date(2021, 5, 5, 9, 15, 0, 0, time.UTC),
 	}
 
-	got := formatArchivedLine("github.com/foo/bar", "v1.0.0", rs)
+	got := formatArchivedLine(cfg, "github.com/foo/bar", "v1.0.0", rs)
 	if !strings.Contains(got, "2024-07-22 14:30:45") {
 		t.Errorf("expected time in archived date, got %q", got)
 	}
@@ -154,12 +150,14 @@ func TestFormatArchivedLine_WithTime(t *testing.T) {
 }
 
 func TestFormatArchivedLine(t *testing.T) {
+	cfg := &Config{DateFmt: "2006-01-02"}
+
 	rs := RepoStatus{
 		ArchivedAt: time.Date(2024, 7, 22, 0, 0, 0, 0, time.UTC),
 		PushedAt:   time.Date(2021, 5, 5, 0, 0, 0, 0, time.UTC),
 	}
 
-	got := formatArchivedLine("github.com/foo/bar", "v1.2.3", rs)
+	got := formatArchivedLine(cfg, "github.com/foo/bar", "v1.2.3", rs)
 	want := "github.com/foo/bar@v1.2.3 [ARCHIVED 2024-07-22, last pushed 2021-05-05]"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
@@ -167,11 +165,13 @@ func TestFormatArchivedLine(t *testing.T) {
 }
 
 func TestFormatArchivedLine_NoVersion(t *testing.T) {
+	cfg := &Config{DateFmt: "2006-01-02"}
+
 	rs := RepoStatus{
 		ArchivedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 
-	got := formatArchivedLine("github.com/foo/bar", "", rs)
+	got := formatArchivedLine(cfg, "github.com/foo/bar", "", rs)
 	if !strings.Contains(got, "github.com/foo/bar [ARCHIVED") {
 		t.Errorf("expected no @ when version empty, got %q", got)
 	}
@@ -181,9 +181,11 @@ func TestFormatArchivedLine_NoVersion(t *testing.T) {
 }
 
 func TestFormatArchivedLine_NoDates(t *testing.T) {
+	cfg := &Config{DateFmt: "2006-01-02"}
+
 	rs := RepoStatus{}
 
-	got := formatArchivedLine("github.com/foo/bar", "v1.0.0", rs)
+	got := formatArchivedLine(cfg, "github.com/foo/bar", "v1.0.0", rs)
 	want := "github.com/foo/bar@v1.0.0 [ARCHIVED]"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
@@ -210,7 +212,16 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
+// defaultTestConfig returns a Config with defaults suitable for most tests.
+func defaultTestConfig() *Config {
+	return &Config{
+		DateFmt:  "2006-01-02",
+		SortMode: "name",
+	}
+}
+
 func TestPrintJSON_ArchivedOnly(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
@@ -234,7 +245,7 @@ func TestPrintJSON_ArchivedOnly(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintJSON(results, skippedModules, false, nil, nil)
+		PrintJSON(cfg, results, skippedModules, nil, nil)
 	})
 
 	var out JSONOutput
@@ -275,6 +286,8 @@ func TestPrintJSON_ArchivedOnly(t *testing.T) {
 }
 
 func TestPrintJSON_ShowAll(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.ShowAll = true
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
@@ -284,7 +297,7 @@ func TestPrintJSON_ShowAll(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintJSON(results, nil, true, nil, nil)
+		PrintJSON(cfg, results, nil, nil, nil)
 	})
 
 	var out JSONOutput
@@ -298,6 +311,7 @@ func TestPrintJSON_ShowAll(t *testing.T) {
 }
 
 func TestPrintJSON_NotFound(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:   Module{Path: "github.com/gone/repo", Owner: "gone", Repo: "repo"},
@@ -307,7 +321,7 @@ func TestPrintJSON_NotFound(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintJSON(results, nil, false, nil, nil)
+		PrintJSON(cfg, results, nil, nil, nil)
 	})
 
 	var out JSONOutput
@@ -324,8 +338,9 @@ func TestPrintJSON_NotFound(t *testing.T) {
 }
 
 func TestPrintJSON_EmptyArchived(t *testing.T) {
+	cfg := defaultTestConfig()
 	output := captureStdout(t, func() {
-		PrintJSON(nil, nil, false, nil, nil)
+		PrintJSON(cfg, nil, nil, nil, nil)
 	})
 
 	var out JSONOutput
@@ -340,6 +355,7 @@ func TestPrintJSON_EmptyArchived(t *testing.T) {
 }
 
 func TestPrintTable_ContainsArchivedModule(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
@@ -350,7 +366,7 @@ func TestPrintTable_ContainsArchivedModule(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTable(results, nil, false)
+		PrintTable(cfg, results, nil)
 	})
 
 	if !strings.Contains(output, "github.com/foo/bar") {
@@ -365,6 +381,7 @@ func TestPrintTable_ContainsArchivedModule(t *testing.T) {
 }
 
 func TestPrintTable_NoArchived(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
@@ -381,7 +398,7 @@ func TestPrintTable_NoArchived(t *testing.T) {
 
 	// Should not print any table to stdout when no archived
 	output := captureStdout(t, func() {
-		PrintTable(results, skippedModules, false)
+		PrintTable(cfg, results, skippedModules)
 	})
 
 	if strings.Contains(output, "github.com/foo/bar") {
@@ -397,6 +414,8 @@ func TestPrintTable_NoArchived(t *testing.T) {
 }
 
 func TestPrintTable_ShowAll(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.ShowAll = true
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: false, Owner: "foo", Repo: "bar"},
@@ -417,7 +436,7 @@ func TestPrintTable_ShowAll(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTable(results, skippedModules, true)
+		PrintTable(cfg, results, skippedModules)
 	})
 
 	if !strings.Contains(output, "github.com/archived/repo") {
@@ -432,6 +451,7 @@ func TestPrintTable_ShowAll(t *testing.T) {
 }
 
 func TestPrintTable_NotFoundModule(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:   Module{Path: "github.com/gone/repo", Owner: "gone", Repo: "repo"},
@@ -442,7 +462,7 @@ func TestPrintTable_NotFoundModule(t *testing.T) {
 
 	// NotFound goes to stderr, stdout should be empty
 	output := captureStdout(t, func() {
-		PrintTable(results, nil, false)
+		PrintTable(cfg, results, nil)
 	})
 
 	if strings.Contains(output, "github.com/gone/repo") {
@@ -451,6 +471,7 @@ func TestPrintTable_NotFoundModule(t *testing.T) {
 }
 
 func TestPrintTree_BasicTree(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/x/y", Version: "v0.1.0", Owner: "x", Repo: "y"},
@@ -472,7 +493,7 @@ func TestPrintTree_BasicTree(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTree(results, graph, allModules, nil)
+		PrintTree(cfg, results, graph, allModules, nil)
 	})
 
 	if !strings.Contains(output, "github.com/a/b@v1.0.0") {
@@ -490,6 +511,7 @@ func TestPrintTree_BasicTree(t *testing.T) {
 }
 
 func TestPrintTree_DirectArchived(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/a/b", Version: "v1.0.0", Owner: "a", Repo: "b"},
@@ -509,7 +531,7 @@ func TestPrintTree_DirectArchived(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTree(results, graph, allModules, nil)
+		PrintTree(cfg, results, graph, allModules, nil)
 	})
 
 	if !strings.Contains(output, "github.com/a/b@v1.0.0 [ARCHIVED 2024-06-01, last pushed 2024-05-01]") {
@@ -518,6 +540,7 @@ func TestPrintTree_DirectArchived(t *testing.T) {
 }
 
 func TestPrintTree_NoArchived(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/a/b", Owner: "a", Repo: "b"},
@@ -535,7 +558,7 @@ func TestPrintTree_NoArchived(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTree(results, graph, allModules, nil)
+		PrintTree(cfg, results, graph, allModules, nil)
 	})
 
 	if output != "" {
@@ -544,6 +567,7 @@ func TestPrintTree_NoArchived(t *testing.T) {
 }
 
 func TestPrintTree_EmptyGraph(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/a/b", Version: "v1.0.0", Owner: "a", Repo: "b"},
@@ -560,7 +584,7 @@ func TestPrintTree_EmptyGraph(t *testing.T) {
 	graph := map[string][]string{}
 
 	output := captureStdout(t, func() {
-		PrintTree(results, graph, allModules, nil)
+		PrintTree(cfg, results, graph, allModules, nil)
 	})
 
 	if !strings.Contains(output, "github.com/a/b@v1.0.0 [ARCHIVED") {
@@ -649,6 +673,7 @@ func TestPrintFiles_ZeroFiles(t *testing.T) {
 }
 
 func TestPrintJSON_WithSourceFiles(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
@@ -664,7 +689,7 @@ func TestPrintJSON_WithSourceFiles(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintJSON(results, nil, false, fileMatches, nil)
+		PrintJSON(cfg, results, nil, fileMatches, nil)
 	})
 
 	var out JSONOutput
@@ -691,6 +716,7 @@ func TestPrintJSON_WithSourceFiles(t *testing.T) {
 }
 
 func TestPrintJSON_NoSourceFilesWhenNil(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
@@ -699,7 +725,7 @@ func TestPrintJSON_NoSourceFilesWhenNil(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintJSON(results, nil, false, nil, nil)
+		PrintJSON(cfg, results, nil, nil, nil)
 	})
 
 	if strings.Contains(output, "source_files") {
@@ -708,6 +734,7 @@ func TestPrintJSON_NoSourceFilesWhenNil(t *testing.T) {
 }
 
 func TestPrintTree_WithFileCount(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/a/b", Version: "v1.0.0", Owner: "a", Repo: "b"},
@@ -733,7 +760,7 @@ func TestPrintTree_WithFileCount(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTree(results, graph, allModules, fileMatches)
+		PrintTree(cfg, results, graph, allModules, fileMatches)
 	})
 
 	if !strings.Contains(output, "(2 files)") {
@@ -819,6 +846,7 @@ func TestBuildTree_EmptyGraph(t *testing.T) {
 }
 
 func TestPrintTreeJSON_Basic(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/x/y", Version: "v0.1.0", Owner: "x", Repo: "y"},
@@ -848,7 +876,7 @@ func TestPrintTreeJSON_Basic(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTreeJSON(results, graph, allModules, nil, skippedModules)
+		PrintTreeJSON(cfg, results, graph, allModules, nil, skippedModules)
 	})
 
 	var out JSONTreeOutput
@@ -893,6 +921,7 @@ func TestPrintTreeJSON_Basic(t *testing.T) {
 }
 
 func TestPrintTreeJSON_DirectArchived(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/a/b", Version: "v1.0.0", Owner: "a", Repo: "b"},
@@ -912,7 +941,7 @@ func TestPrintTreeJSON_DirectArchived(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTreeJSON(results, graph, allModules, nil, nil)
+		PrintTreeJSON(cfg, results, graph, allModules, nil, nil)
 	})
 
 	var out JSONTreeOutput
@@ -932,6 +961,7 @@ func TestPrintTreeJSON_DirectArchived(t *testing.T) {
 }
 
 func TestPrintTreeJSON_WithSourceFiles(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/x/y", Version: "v0.1.0", Owner: "x", Repo: "y"},
@@ -957,7 +987,7 @@ func TestPrintTreeJSON_WithSourceFiles(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTreeJSON(results, graph, allModules, fileMatches, nil)
+		PrintTreeJSON(cfg, results, graph, allModules, fileMatches, nil)
 	})
 
 	var out JSONTreeOutput
@@ -975,6 +1005,7 @@ func TestPrintTreeJSON_WithSourceFiles(t *testing.T) {
 }
 
 func TestPrintTreeJSON_NoArchived(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/a/b", Owner: "a", Repo: "b"},
@@ -990,7 +1021,7 @@ func TestPrintTreeJSON_NoArchived(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTreeJSON(results, graph, allModules, nil, nil)
+		PrintTreeJSON(cfg, results, graph, allModules, nil, nil)
 	})
 
 	var out JSONTreeOutput
@@ -1012,48 +1043,13 @@ func TestCalcDuration(t *testing.T) {
 		wantM      int
 		wantD      int
 	}{
-		{
-			name:       "same day",
-			archivedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			endDate:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			wantY:      0, wantM: 0, wantD: 1,
-		},
-		{
-			name:       "one day apart",
-			archivedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			endDate:    time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
-			wantY:      0, wantM: 0, wantD: 2,
-		},
-		{
-			name:       "one month",
-			archivedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			endDate:    time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
-			wantY:      0, wantM: 1, wantD: 0,
-		},
-		{
-			name:       "one year",
-			archivedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			endDate:    time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC),
-			wantY:      1, wantM: 0, wantD: 0,
-		},
-		{
-			name:       "years months and days",
-			archivedAt: time.Date(2022, 3, 15, 0, 0, 0, 0, time.UTC),
-			endDate:    time.Date(2024, 7, 22, 0, 0, 0, 0, time.UTC),
-			wantY:      2, wantM: 4, wantD: 8,
-		},
-		{
-			name:       "across year boundary",
-			archivedAt: time.Date(2023, 11, 15, 0, 0, 0, 0, time.UTC),
-			endDate:    time.Date(2024, 2, 20, 0, 0, 0, 0, time.UTC),
-			wantY:      0, wantM: 3, wantD: 6,
-		},
-		{
-			name:       "time is ignored",
-			archivedAt: time.Date(2024, 1, 1, 23, 59, 59, 0, time.UTC),
-			endDate:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			wantY:      0, wantM: 0, wantD: 1,
-		},
+		{name: "same day", archivedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), endDate: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), wantY: 0, wantM: 0, wantD: 1},
+		{name: "one day apart", archivedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), endDate: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), wantY: 0, wantM: 0, wantD: 2},
+		{name: "one month", archivedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), endDate: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), wantY: 0, wantM: 1, wantD: 0},
+		{name: "one year", archivedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), endDate: time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC), wantY: 1, wantM: 0, wantD: 0},
+		{name: "years months and days", archivedAt: time.Date(2022, 3, 15, 0, 0, 0, 0, time.UTC), endDate: time.Date(2024, 7, 22, 0, 0, 0, 0, time.UTC), wantY: 2, wantM: 4, wantD: 8},
+		{name: "across year boundary", archivedAt: time.Date(2023, 11, 15, 0, 0, 0, 0, time.UTC), endDate: time.Date(2024, 2, 20, 0, 0, 0, 0, time.UTC), wantY: 0, wantM: 3, wantD: 6},
+		{name: "time is ignored", archivedAt: time.Date(2024, 1, 1, 23, 59, 59, 0, time.UTC), endDate: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), wantY: 0, wantM: 0, wantD: 1},
 	}
 
 	for _, tt := range tests {
@@ -1068,61 +1064,25 @@ func TestCalcDuration(t *testing.T) {
 }
 
 func TestFormatDuration(t *testing.T) {
-	savedEnabled := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		durationEnabled = savedEnabled
-		durationEndDate = savedEnd
-	}()
-
-	durationEnabled = true
-	durationEndDate = time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC)
+	cfg := &Config{Duration: DurationConfig{Enabled: true, EndDate: time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC)}, DateFmt: "2006-01-02"}
 
 	tests := []struct {
 		name       string
 		archivedAt time.Time
 		want       string
 	}{
-		{
-			name:       "years months days",
-			archivedAt: time.Date(2022, 3, 15, 0, 0, 0, 0, time.UTC),
-			want:       "3y11m7d",
-		},
-		{
-			name:       "years and one day (inclusive)",
-			archivedAt: time.Date(2024, 2, 21, 0, 0, 0, 0, time.UTC),
-			want:       "2y1d",
-		},
-		{
-			name:       "only days",
-			archivedAt: time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC),
-			want:       "2d",
-		},
-		{
-			name:       "one year and one day",
-			archivedAt: time.Date(2025, 2, 21, 0, 0, 0, 0, time.UTC),
-			want:       "1y1d",
-		},
-		{
-			name:       "one month and one day",
-			archivedAt: time.Date(2026, 1, 21, 0, 0, 0, 0, time.UTC),
-			want:       "1m1d",
-		},
-		{
-			name:       "same day",
-			archivedAt: time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC),
-			want:       "1d",
-		},
-		{
-			name:       "zero time returns empty",
-			archivedAt: time.Time{},
-			want:       "",
-		},
+		{"years months days", time.Date(2022, 3, 15, 0, 0, 0, 0, time.UTC), "3y11m7d"},
+		{"years and one day (inclusive)", time.Date(2024, 2, 21, 0, 0, 0, 0, time.UTC), "2y1d"},
+		{"only days", time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC), "2d"},
+		{"one year and one day", time.Date(2025, 2, 21, 0, 0, 0, 0, time.UTC), "1y1d"},
+		{"one month and one day", time.Date(2026, 1, 21, 0, 0, 0, 0, time.UTC), "1m1d"},
+		{"same day", time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC), "1d"},
+		{"zero time returns empty", time.Time{}, ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatDuration(tt.archivedAt)
+			got := formatDuration(cfg, tt.archivedAt)
 			if got != tt.want {
 				t.Errorf("formatDuration() = %q, want %q", got, tt.want)
 			}
@@ -1131,51 +1091,23 @@ func TestFormatDuration(t *testing.T) {
 }
 
 func TestFormatDurationShort(t *testing.T) {
-	savedEnabled := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		durationEnabled = savedEnabled
-		durationEndDate = savedEnd
-	}()
-
-	durationEnabled = true
-	durationEndDate = time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC)
+	cfg := &Config{Duration: DurationConfig{Enabled: true, EndDate: time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC)}, DateFmt: "2006-01-02"}
 
 	tests := []struct {
 		name       string
 		archivedAt time.Time
 		want       string
 	}{
-		{
-			name:       "years months days",
-			archivedAt: time.Date(2022, 3, 15, 0, 0, 0, 0, time.UTC),
-			want:       "3y11m7d",
-		},
-		{
-			name:       "years and one day",
-			archivedAt: time.Date(2024, 2, 21, 0, 0, 0, 0, time.UTC),
-			want:       "2y1d",
-		},
-		{
-			name:       "only days",
-			archivedAt: time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC),
-			want:       "2d",
-		},
-		{
-			name:       "same day",
-			archivedAt: time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC),
-			want:       "1d",
-		},
-		{
-			name:       "zero time returns empty",
-			archivedAt: time.Time{},
-			want:       "",
-		},
+		{"years months days", time.Date(2022, 3, 15, 0, 0, 0, 0, time.UTC), "3y11m7d"},
+		{"years and one day", time.Date(2024, 2, 21, 0, 0, 0, 0, time.UTC), "2y1d"},
+		{"only days", time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC), "2d"},
+		{"same day", time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC), "1d"},
+		{"zero time returns empty", time.Time{}, ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatDurationShort(tt.archivedAt)
+			got := formatDurationShort(cfg, tt.archivedAt)
 			if got != tt.want {
 				t.Errorf("formatDurationShort() = %q, want %q", got, tt.want)
 			}
@@ -1184,26 +1116,15 @@ func TestFormatDurationShort(t *testing.T) {
 }
 
 func TestFormatDuration_Disabled(t *testing.T) {
-	savedEnabled := durationEnabled
-	defer func() { durationEnabled = savedEnabled }()
-
-	durationEnabled = false
-	got := formatDuration(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	cfg := &Config{DateFmt: "2006-01-02"}
+	got := formatDuration(cfg, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
 	if got != "" {
 		t.Errorf("expected empty when disabled, got %q", got)
 	}
 }
 
 func TestPrintTable_WithDuration(t *testing.T) {
-	savedEnabled := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		durationEnabled = savedEnabled
-		durationEndDate = savedEnd
-	}()
-
-	durationEnabled = true
-	durationEndDate = time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC)
+	cfg := &Config{Duration: DurationConfig{Enabled: true, EndDate: time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC)}, DateFmt: "2006-01-02", SortMode: "name"}
 
 	results := []RepoStatus{
 		{
@@ -1215,7 +1136,7 @@ func TestPrintTable_WithDuration(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTable(results, nil, false)
+		PrintTable(cfg, results, nil)
 	})
 
 	if !strings.Contains(output, "DURATION") {
@@ -1227,10 +1148,7 @@ func TestPrintTable_WithDuration(t *testing.T) {
 }
 
 func TestPrintTable_NoDurationColumn(t *testing.T) {
-	savedEnabled := durationEnabled
-	defer func() { durationEnabled = savedEnabled }()
-
-	durationEnabled = false
+	cfg := defaultTestConfig()
 
 	results := []RepoStatus{
 		{
@@ -1241,7 +1159,7 @@ func TestPrintTable_NoDurationColumn(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTable(results, nil, false)
+		PrintTable(cfg, results, nil)
 	})
 
 	if strings.Contains(output, "DURATION") {
@@ -1250,15 +1168,7 @@ func TestPrintTable_NoDurationColumn(t *testing.T) {
 }
 
 func TestPrintJSON_WithDuration(t *testing.T) {
-	savedEnabled := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		durationEnabled = savedEnabled
-		durationEndDate = savedEnd
-	}()
-
-	durationEnabled = true
-	durationEndDate = time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC)
+	cfg := &Config{Duration: DurationConfig{Enabled: true, EndDate: time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC)}, DateFmt: "2006-01-02"}
 
 	results := []RepoStatus{
 		{
@@ -1269,7 +1179,7 @@ func TestPrintJSON_WithDuration(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintJSON(results, nil, false, nil, nil)
+		PrintJSON(cfg, results, nil, nil, nil)
 	})
 
 	var out JSONOutput
@@ -1286,22 +1196,14 @@ func TestPrintJSON_WithDuration(t *testing.T) {
 }
 
 func TestFormatArchivedLine_WithDuration(t *testing.T) {
-	savedEnabled := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		durationEnabled = savedEnabled
-		durationEndDate = savedEnd
-	}()
-
-	durationEnabled = true
-	durationEndDate = time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC)
+	cfg := &Config{Duration: DurationConfig{Enabled: true, EndDate: time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC)}, DateFmt: "2006-01-02"}
 
 	rs := RepoStatus{
 		ArchivedAt: time.Date(2024, 7, 22, 0, 0, 0, 0, time.UTC),
 		PushedAt:   time.Date(2021, 5, 5, 0, 0, 0, 0, time.UTC),
 	}
 
-	got := formatArchivedLine("github.com/foo/bar", "v1.0.0", rs)
+	got := formatArchivedLine(cfg, "github.com/foo/bar", "v1.0.0", rs)
 	if !strings.Contains(got, "1y7m") {
 		t.Errorf("expected compact duration in archived line, got %q", got)
 	}
@@ -1323,36 +1225,17 @@ func TestPluralize(t *testing.T) {
 }
 
 func TestPrintSkippedTable_Enriched(t *testing.T) {
+	cfg := defaultTestConfig()
 	modules := []Module{
-		{
-			Path:          "golang.org/x/mod",
-			Version:       "v0.17.0",
-			Direct:        true,
-			LatestVersion: "v0.22.0",
-			VersionTime:   time.Date(2024, 3, 15, 10, 30, 0, 0, time.UTC),
-			SourceURL:     "https://go.googlesource.com/mod",
-		},
-		{
-			Path:          "golang.org/x/text",
-			Version:       "v0.21.0",
-			Direct:        false,
-			LatestVersion: "v0.21.0", // same as current — should show "-"
-			VersionTime:   time.Date(2023, 10, 11, 0, 0, 0, 0, time.UTC),
-			SourceURL:     "https://go.googlesource.com/text",
-		},
-		{
-			Path:    "gopkg.in/yaml.v3",
-			Version: "v3.0.1",
-			Direct:  true,
-			// No enrichment data
-		},
+		{Path: "golang.org/x/mod", Version: "v0.17.0", Direct: true, LatestVersion: "v0.22.0", VersionTime: time.Date(2024, 3, 15, 10, 30, 0, 0, time.UTC), SourceURL: "https://go.googlesource.com/mod"},
+		{Path: "golang.org/x/text", Version: "v0.21.0", Direct: false, LatestVersion: "v0.21.0", VersionTime: time.Date(2023, 10, 11, 0, 0, 0, 0, time.UTC), SourceURL: "https://go.googlesource.com/text"},
+		{Path: "gopkg.in/yaml.v3", Version: "v3.0.1", Direct: true},
 	}
 
 	output := captureStdout(t, func() {
-		PrintSkippedTable(modules)
+		PrintSkippedTable(cfg, modules)
 	})
 
-	// Check header columns
 	if !strings.Contains(output, "LATEST") {
 		t.Error("table should contain LATEST header")
 	}
@@ -1362,8 +1245,6 @@ func TestPrintSkippedTable_Enriched(t *testing.T) {
 	if !strings.Contains(output, "SOURCE") {
 		t.Error("table should contain SOURCE header")
 	}
-
-	// Check enriched values
 	if !strings.Contains(output, "v0.22.0") {
 		t.Error("table should show latest version v0.22.0")
 	}
@@ -1374,7 +1255,6 @@ func TestPrintSkippedTable_Enriched(t *testing.T) {
 		t.Error("table should show source URL")
 	}
 
-	// Latest same as current should show "-"
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "golang.org/x/text") {
@@ -1396,7 +1276,6 @@ func TestPrintDeprecatedTable(t *testing.T) {
 		PrintDeprecatedTable(modules)
 	})
 
-	// Check header
 	if !strings.Contains(output, "MODULE") {
 		t.Error("table should contain MODULE header")
 	}
@@ -1410,7 +1289,6 @@ func TestPrintDeprecatedTable(t *testing.T) {
 		t.Error("table should contain MESSAGE header")
 	}
 
-	// Check sorted output (ancient/lib before old/thing)
 	ancientIdx := strings.Index(output, "github.com/ancient/lib")
 	oldIdx := strings.Index(output, "github.com/old/thing")
 	if ancientIdx < 0 || oldIdx < 0 {
@@ -1420,15 +1298,12 @@ func TestPrintDeprecatedTable(t *testing.T) {
 		t.Error("modules should be sorted alphabetically")
 	}
 
-	// Check direct/indirect labels
 	if !strings.Contains(output, "direct") {
 		t.Error("should show 'direct'")
 	}
 	if !strings.Contains(output, "indirect") {
 		t.Error("should show 'indirect'")
 	}
-
-	// Check deprecation messages
 	if !strings.Contains(output, "Use github.com/new/thing.") {
 		t.Error("should show deprecation message")
 	}
@@ -1438,6 +1313,7 @@ func TestPrintDeprecatedTable(t *testing.T) {
 }
 
 func TestPrintTable_WithDeprecatedSection(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
@@ -1452,10 +1328,9 @@ func TestPrintTable_WithDeprecatedSection(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintTable(results, nil, false, deprecatedModules)
+		PrintTable(cfg, results, nil, deprecatedModules)
 	})
 
-	// Should contain both archived and deprecated sections
 	if !strings.Contains(output, "github.com/foo/bar") {
 		t.Error("should show archived module")
 	}
@@ -1468,6 +1343,7 @@ func TestPrintTable_WithDeprecatedSection(t *testing.T) {
 }
 
 func TestBuildTreeJSONOutput_WithDeprecated(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/x/y", Version: "v0.1.0", Owner: "x", Repo: "y"},
@@ -1490,7 +1366,7 @@ func TestBuildTreeJSONOutput_WithDeprecated(t *testing.T) {
 		{Path: "github.com/old/thing", Version: "v0.5.0", Direct: true, Owner: "old", Repo: "thing", Deprecated: "Use github.com/new/thing."},
 	}
 
-	out := buildTreeJSONOutput(results, graph, allModules, nil, nil, deprecatedModules)
+	out := buildTreeJSONOutput(cfg, results, graph, allModules, nil, nil, deprecatedModules)
 
 	if len(out.Deprecated) != 1 {
 		t.Fatalf("expected 1 deprecated entry, got %d", len(out.Deprecated))
@@ -1504,6 +1380,7 @@ func TestBuildTreeJSONOutput_WithDeprecated(t *testing.T) {
 }
 
 func TestPrintJSON_WithDeprecated(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
@@ -1517,7 +1394,7 @@ func TestPrintJSON_WithDeprecated(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintJSON(results, nil, false, nil, nil, deprecatedModules)
+		PrintJSON(cfg, results, nil, nil, nil, deprecatedModules)
 	})
 
 	var out JSONOutput
@@ -1537,6 +1414,7 @@ func TestPrintJSON_WithDeprecated(t *testing.T) {
 }
 
 func TestPrintJSON_NonGitHubModules(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
@@ -1546,18 +1424,11 @@ func TestPrintJSON_NonGitHubModules(t *testing.T) {
 	}
 
 	nonGitHubModules := []Module{
-		{
-			Path:          "golang.org/x/text",
-			Version:       "v0.14.0",
-			Direct:        true,
-			LatestVersion: "v0.21.0",
-			VersionTime:   time.Date(2023, 10, 11, 17, 42, 28, 0, time.UTC),
-			SourceURL:     "https://go.googlesource.com/text",
-		},
+		{Path: "golang.org/x/text", Version: "v0.14.0", Direct: true, LatestVersion: "v0.21.0", VersionTime: time.Date(2023, 10, 11, 17, 42, 28, 0, time.UTC), SourceURL: "https://go.googlesource.com/text"},
 	}
 
 	output := captureStdout(t, func() {
-		PrintJSON(results, nonGitHubModules, false, nil, nil)
+		PrintJSON(cfg, results, nonGitHubModules, nil, nil)
 	})
 
 	var out JSONOutput
@@ -1586,41 +1457,23 @@ func TestPrintJSON_NonGitHubModules(t *testing.T) {
 		t.Errorf("source_url = %q", m.SourceURL)
 	}
 
-	// Verify JSON field names
 	if !strings.Contains(output, `"non_github_count"`) {
 		t.Error("JSON should use non_github_count field name")
 	}
 	if !strings.Contains(output, `"non_github_modules"`) {
 		t.Error("JSON should use non_github_modules field name")
 	}
-	if strings.Contains(output, `"skipped_non_github"`) {
-		t.Error("JSON should not use old skipped_non_github field name")
-	}
-	if strings.Contains(output, `"skipped_modules"`) {
-		t.Error("JSON should not use old skipped_modules field name")
-	}
 }
 
 func TestPrintFilesPlain(t *testing.T) {
 	results := []RepoStatus{
-		{
-			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
-			IsArchived: true,
-		},
-		{
-			Module:     Module{Path: "github.com/baz/qux", Version: "v2.0.0", Owner: "baz", Repo: "qux"},
-			IsArchived: true,
-		},
+		{Module: Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"}, IsArchived: true},
+		{Module: Module{Path: "github.com/baz/qux", Version: "v2.0.0", Owner: "baz", Repo: "qux"}, IsArchived: true},
 	}
 
 	fileMatches := map[string][]FileMatch{
-		"github.com/foo/bar": {
-			{File: "audit/hash.go", Line: 14, ImportPath: "github.com/foo/bar"},
-			{File: "vault/policy.go", Line: 17, ImportPath: "github.com/foo/bar"},
-		},
-		"github.com/baz/qux": {
-			{File: "cmd/main.go", Line: 5, ImportPath: "github.com/baz/qux"},
-		},
+		"github.com/foo/bar": {{File: "audit/hash.go", Line: 14, ImportPath: "github.com/foo/bar"}, {File: "vault/policy.go", Line: 17, ImportPath: "github.com/foo/bar"}},
+		"github.com/baz/qux": {{File: "cmd/main.go", Line: 5, ImportPath: "github.com/baz/qux"}},
 	}
 
 	output := captureStdout(t, func() {
@@ -1631,7 +1484,6 @@ func TestPrintFilesPlain(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("expected 3 lines, got %d:\n%s", len(lines), output)
 	}
-	// Sorted by module path: baz/qux first, then foo/bar
 	if lines[0] != "cmd/main.go:5:github.com/baz/qux" {
 		t.Errorf("line 0 = %q", lines[0])
 	}
@@ -1672,68 +1524,36 @@ func TestParseThreshold(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if y != tt.y || m != tt.m || d != tt.d {
-				t.Errorf("parseThreshold(%q) = (%d, %d, %d), want (%d, %d, %d)",
-					tt.input, y, m, d, tt.y, tt.m, tt.d)
+				t.Errorf("parseThreshold(%q) = (%d, %d, %d), want (%d, %d, %d)", tt.input, y, m, d, tt.y, tt.m, tt.d)
 			}
 		})
 	}
 }
 
 func TestExceedsThreshold(t *testing.T) {
-	// Pushed 3 years ago should exceed 2y threshold
 	old := time.Now().AddDate(-3, 0, 0)
 	if !exceedsThreshold(old, 2, 0, 0) {
 		t.Error("3y old should exceed 2y threshold")
 	}
-
-	// Pushed 1 year ago should NOT exceed 2y threshold
 	recent := time.Now().AddDate(-1, 0, 0)
 	if exceedsThreshold(recent, 2, 0, 0) {
 		t.Error("1y old should not exceed 2y threshold")
 	}
-
-	// Zero time should return false
 	if exceedsThreshold(time.Time{}, 2, 0, 0) {
 		t.Error("zero time should not exceed threshold")
 	}
 }
 
 func TestFilterStale(t *testing.T) {
-	savedStale := staleEnabled
-	savedY := staleYears
-	savedM := staleMonths
-	savedD := staleDays
-	defer func() {
-		staleEnabled = savedStale
-		staleYears = savedY
-		staleMonths = savedM
-		staleDays = savedD
-	}()
-
-	staleEnabled = true
-	staleYears = 2
-	staleMonths = 0
-	staleDays = 0
+	cfg := &Config{Stale: StaleConfig{Enabled: true, Years: 2}, DateFmt: "2006-01-02"}
 
 	results := []RepoStatus{
-		{
-			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
-			IsArchived: false,
-			PushedAt:   time.Now().AddDate(-3, 0, 0), // 3 years ago → stale
-		},
-		{
-			Module:     Module{Path: "github.com/baz/qux", Version: "v2.0.0", Owner: "baz", Repo: "qux"},
-			IsArchived: false,
-			PushedAt:   time.Now().AddDate(0, -6, 0), // 6 months ago → not stale
-		},
-		{
-			Module:     Module{Path: "github.com/old/archived", Version: "v0.1.0", Owner: "old", Repo: "archived"},
-			IsArchived: true,
-			PushedAt:   time.Now().AddDate(-5, 0, 0), // archived → should NOT appear in stale
-		},
+		{Module: Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"}, IsArchived: false, PushedAt: time.Now().AddDate(-3, 0, 0)},
+		{Module: Module{Path: "github.com/baz/qux", Version: "v2.0.0", Owner: "baz", Repo: "qux"}, IsArchived: false, PushedAt: time.Now().AddDate(0, -6, 0)},
+		{Module: Module{Path: "github.com/old/archived", Version: "v0.1.0", Owner: "old", Repo: "archived"}, IsArchived: true, PushedAt: time.Now().AddDate(-5, 0, 0)},
 	}
 
-	stale := filterStale(results)
+	stale := filterStale(cfg, results)
 	if len(stale) != 1 {
 		t.Fatalf("expected 1 stale, got %d", len(stale))
 	}
@@ -1743,47 +1563,26 @@ func TestFilterStale(t *testing.T) {
 }
 
 func TestFilterStale_Disabled(t *testing.T) {
-	savedStale := staleEnabled
-	defer func() { staleEnabled = savedStale }()
+	cfg := &Config{DateFmt: "2006-01-02"}
 
-	staleEnabled = false
 	results := []RepoStatus{
-		{
-			Module:   Module{Path: "github.com/foo/bar"},
-			PushedAt: time.Now().AddDate(-5, 0, 0),
-		},
+		{Module: Module{Path: "github.com/foo/bar"}, PushedAt: time.Now().AddDate(-5, 0, 0)},
 	}
-	stale := filterStale(results)
+	stale := filterStale(cfg, results)
 	if stale != nil {
 		t.Error("expected nil when stale disabled")
 	}
 }
 
 func TestPrintStaleTable(t *testing.T) {
-	savedStale := staleEnabled
-	savedY := staleYears
-	savedEnabled := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		staleEnabled = savedStale
-		staleYears = savedY
-		durationEnabled = savedEnabled
-		durationEndDate = savedEnd
-	}()
-
-	staleEnabled = true
-	staleYears = 2
-	durationEnabled = false
+	cfg := &Config{Stale: StaleConfig{Enabled: true, Years: 2}, DateFmt: "2006-01-02", SortMode: "name"}
 
 	stale := []RepoStatus{
-		{
-			Module:   Module{Path: "github.com/old/repo", Version: "v1.0.0", Direct: true},
-			PushedAt: time.Date(2022, 1, 15, 0, 0, 0, 0, time.UTC),
-		},
+		{Module: Module{Path: "github.com/old/repo", Version: "v1.0.0", Direct: true}, PushedAt: time.Date(2022, 1, 15, 0, 0, 0, 0, time.UTC)},
 	}
 
 	output := captureStdout(t, func() {
-		PrintStaleTable(stale)
+		PrintStaleTable(cfg, stale)
 	})
 
 	if !strings.Contains(output, "github.com/old/repo") {
@@ -1798,23 +1597,17 @@ func TestPrintStaleTable(t *testing.T) {
 }
 
 func TestPrintJSON_WithStale(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
-		{
-			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
-			IsArchived: true,
-			ArchivedAt: time.Date(2024, 7, 22, 0, 0, 0, 0, time.UTC),
-		},
+		{Module: Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"}, IsArchived: true, ArchivedAt: time.Date(2024, 7, 22, 0, 0, 0, 0, time.UTC)},
 	}
 
 	stale := []RepoStatus{
-		{
-			Module:   Module{Path: "github.com/old/repo", Version: "v1.0.0", Direct: true, Owner: "old", Repo: "repo"},
-			PushedAt: time.Date(2022, 1, 15, 0, 0, 0, 0, time.UTC),
-		},
+		{Module: Module{Path: "github.com/old/repo", Version: "v1.0.0", Direct: true, Owner: "old", Repo: "repo"}, PushedAt: time.Date(2022, 1, 15, 0, 0, 0, 0, time.UTC)},
 	}
 
 	output := captureStdout(t, func() {
-		PrintJSON(results, nil, false, nil, stale)
+		PrintJSON(cfg, results, nil, nil, stale)
 	})
 
 	var out JSONOutput
@@ -1834,16 +1627,13 @@ func TestPrintJSON_WithStale(t *testing.T) {
 }
 
 func TestSortResults_ByName(t *testing.T) {
-	savedSort := sortMode
-	defer func() { sortMode = savedSort }()
-	sortMode = "name"
-
+	cfg := &Config{SortMode: "name"}
 	results := []RepoStatus{
 		{Module: Module{Path: "github.com/z/z"}},
 		{Module: Module{Path: "github.com/a/a"}},
 		{Module: Module{Path: "github.com/m/m"}},
 	}
-	sortResults(results)
+	sortResults(cfg, results)
 
 	if results[0].Module.Path != "github.com/a/a" {
 		t.Errorf("expected a/a first, got %s", results[0].Module.Path)
@@ -1854,18 +1644,14 @@ func TestSortResults_ByName(t *testing.T) {
 }
 
 func TestSortResults_ByDuration(t *testing.T) {
-	savedSort := sortMode
-	defer func() { sortMode = savedSort }()
-	sortMode = "duration"
-
+	cfg := &Config{SortMode: "duration"}
 	results := []RepoStatus{
 		{Module: Module{Path: "github.com/new/repo"}, ArchivedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
 		{Module: Module{Path: "github.com/old/repo"}, ArchivedAt: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)},
 		{Module: Module{Path: "github.com/mid/repo"}, ArchivedAt: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)},
 	}
-	sortResults(results)
+	sortResults(cfg, results)
 
-	// Oldest archived first
 	if results[0].Module.Path != "github.com/old/repo" {
 		t.Errorf("expected old/repo first, got %s", results[0].Module.Path)
 	}
@@ -1875,17 +1661,13 @@ func TestSortResults_ByDuration(t *testing.T) {
 }
 
 func TestSortResults_ByPushed(t *testing.T) {
-	savedSort := sortMode
-	defer func() { sortMode = savedSort }()
-	sortMode = "pushed"
-
+	cfg := &Config{SortMode: "pushed"}
 	results := []RepoStatus{
 		{Module: Module{Path: "github.com/recent/repo"}, PushedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
 		{Module: Module{Path: "github.com/old/repo"}, PushedAt: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)},
 	}
-	sortResults(results)
+	sortResults(cfg, results)
 
-	// Oldest pushed first
 	if results[0].Module.Path != "github.com/old/repo" {
 		t.Errorf("expected old/repo first, got %s", results[0].Module.Path)
 	}
@@ -1908,36 +1690,27 @@ func TestParseSortFlag(t *testing.T) {
 		{"duration:asc", "duration", true},
 	}
 
-	savedSort := sortMode
-	savedReverse := sortReverse
-	defer func() { sortMode = savedSort; sortReverse = savedReverse }()
-
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			parseSortFlag(tt.input)
-			if sortMode != tt.wantMode {
-				t.Errorf("sortMode = %q, want %q", sortMode, tt.wantMode)
+			mode, reverse := parseSortFlag(tt.input)
+			if mode != tt.wantMode {
+				t.Errorf("mode = %q, want %q", mode, tt.wantMode)
 			}
-			if sortReverse != tt.wantReverse {
-				t.Errorf("sortReverse = %v, want %v", sortReverse, tt.wantReverse)
+			if reverse != tt.wantReverse {
+				t.Errorf("reverse = %v, want %v", reverse, tt.wantReverse)
 			}
 		})
 	}
 }
 
 func TestSortResults_ByNameDesc(t *testing.T) {
-	savedSort := sortMode
-	savedReverse := sortReverse
-	defer func() { sortMode = savedSort; sortReverse = savedReverse }()
-	sortMode = "name"
-	sortReverse = true
-
+	cfg := &Config{SortMode: "name", SortReverse: true}
 	results := []RepoStatus{
 		{Module: Module{Path: "github.com/a/a"}},
 		{Module: Module{Path: "github.com/m/m"}},
 		{Module: Module{Path: "github.com/z/z"}},
 	}
-	sortResults(results)
+	sortResults(cfg, results)
 
 	if results[0].Module.Path != "github.com/z/z" {
 		t.Errorf("expected z/z first, got %s", results[0].Module.Path)
@@ -1948,20 +1721,14 @@ func TestSortResults_ByNameDesc(t *testing.T) {
 }
 
 func TestSortResults_ByDurationAsc(t *testing.T) {
-	savedSort := sortMode
-	savedReverse := sortReverse
-	defer func() { sortMode = savedSort; sortReverse = savedReverse }()
-	sortMode = "duration"
-	sortReverse = true // :asc reverses duration (newest archived first)
-
+	cfg := &Config{SortMode: "duration", SortReverse: true}
 	results := []RepoStatus{
 		{Module: Module{Path: "github.com/old/repo"}, ArchivedAt: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)},
 		{Module: Module{Path: "github.com/new/repo"}, ArchivedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
 		{Module: Module{Path: "github.com/mid/repo"}, ArchivedAt: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)},
 	}
-	sortResults(results)
+	sortResults(cfg, results)
 
-	// Newest archived first with duration:asc
 	if results[0].Module.Path != "github.com/new/repo" {
 		t.Errorf("expected new/repo first, got %s", results[0].Module.Path)
 	}
@@ -1971,40 +1738,27 @@ func TestSortResults_ByDurationAsc(t *testing.T) {
 }
 
 func TestSortResults_ByPushedAsc(t *testing.T) {
-	savedSort := sortMode
-	savedReverse := sortReverse
-	defer func() { sortMode = savedSort; sortReverse = savedReverse }()
-	sortMode = "pushed"
-	sortReverse = true // :asc reverses pushed (most recently pushed first)
-
+	cfg := &Config{SortMode: "pushed", SortReverse: true}
 	results := []RepoStatus{
 		{Module: Module{Path: "github.com/old/repo"}, PushedAt: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)},
 		{Module: Module{Path: "github.com/recent/repo"}, PushedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
 	}
-	sortResults(results)
+	sortResults(cfg, results)
 
-	// Most recently pushed first with pushed:asc
 	if results[0].Module.Path != "github.com/recent/repo" {
 		t.Errorf("expected recent/repo first, got %s", results[0].Module.Path)
 	}
 }
 
 func TestPrintTable_Grouping(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
-		{
-			Module:     Module{Path: "github.com/direct/one", Version: "v1.0.0", Direct: true, Owner: "direct", Repo: "one"},
-			IsArchived: true,
-			ArchivedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		},
-		{
-			Module:     Module{Path: "github.com/indirect/two", Version: "v2.0.0", Direct: false, Owner: "indirect", Repo: "two"},
-			IsArchived: true,
-			ArchivedAt: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
-		},
+		{Module: Module{Path: "github.com/direct/one", Version: "v1.0.0", Direct: true, Owner: "direct", Repo: "one"}, IsArchived: true, ArchivedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
+		{Module: Module{Path: "github.com/indirect/two", Version: "v2.0.0", Direct: false, Owner: "indirect", Repo: "two"}, IsArchived: true, ArchivedAt: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC)},
 	}
 
 	output := captureStdout(t, func() {
-		PrintTable(results, nil, false)
+		PrintTable(cfg, results, nil)
 	})
 
 	if !strings.Contains(output, "Direct (1)") {
@@ -2016,54 +1770,31 @@ func TestPrintTable_Grouping(t *testing.T) {
 }
 
 func TestFormatThreshold(t *testing.T) {
-	savedY := staleYears
-	savedM := staleMonths
-	savedD := staleDays
-	defer func() {
-		staleYears = savedY
-		staleMonths = savedM
-		staleDays = savedD
-	}()
-
-	staleYears = 2
-	staleMonths = 0
-	staleDays = 0
-	if got := formatThreshold(); got != "2y" {
+	cfg := &Config{Stale: StaleConfig{Years: 2}}
+	if got := formatThreshold(cfg); got != "2y" {
 		t.Errorf("formatThreshold() = %q, want %q", got, "2y")
 	}
 
-	staleYears = 1
-	staleMonths = 6
-	staleDays = 0
-	if got := formatThreshold(); got != "1y6m" {
+	cfg = &Config{Stale: StaleConfig{Years: 1, Months: 6}}
+	if got := formatThreshold(cfg); got != "1y6m" {
 		t.Errorf("formatThreshold() = %q, want %q", got, "1y6m")
 	}
 
-	staleYears = 0
-	staleMonths = 0
-	staleDays = 180
-	if got := formatThreshold(); got != "180d" {
+	cfg = &Config{Stale: StaleConfig{Days: 180}}
+	if got := formatThreshold(cfg); got != "180d" {
 		t.Errorf("formatThreshold() = %q, want %q", got, "180d")
 	}
 }
 
 func TestPrintIgnoredTable(t *testing.T) {
+	cfg := defaultTestConfig()
 	ignored := []RepoStatus{
-		{
-			Module:     Module{Path: "github.com/pkg/errors", Version: "v0.9.1", Direct: false},
-			IsArchived: true,
-			ArchivedAt: time.Date(2021, 12, 1, 0, 0, 0, 0, time.UTC),
-			PushedAt:   time.Date(2021, 11, 2, 0, 0, 0, 0, time.UTC),
-		},
-		{
-			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true},
-			IsArchived: false,
-			PushedAt:   time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC),
-		},
+		{Module: Module{Path: "github.com/pkg/errors", Version: "v0.9.1", Direct: false}, IsArchived: true, ArchivedAt: time.Date(2021, 12, 1, 0, 0, 0, 0, time.UTC), PushedAt: time.Date(2021, 11, 2, 0, 0, 0, 0, time.UTC)},
+		{Module: Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true}, IsArchived: false, PushedAt: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC)},
 	}
 
 	output := captureStdout(t, func() {
-		PrintIgnoredTable(ignored, nil)
+		PrintIgnoredTable(cfg, ignored, nil)
 	})
 
 	if !strings.Contains(output, "github.com/pkg/errors") {
@@ -2081,20 +1812,16 @@ func TestPrintIgnoredTable(t *testing.T) {
 }
 
 func TestPrintIgnoredTable_WithReasons(t *testing.T) {
+	cfg := defaultTestConfig()
 	ignored := []RepoStatus{
-		{
-			Module:     Module{Path: "github.com/pkg/errors", Version: "v0.9.1", Direct: false},
-			IsArchived: true,
-			ArchivedAt: time.Date(2021, 12, 1, 0, 0, 0, 0, time.UTC),
-			PushedAt:   time.Date(2021, 11, 2, 0, 0, 0, 0, time.UTC),
-		},
+		{Module: Module{Path: "github.com/pkg/errors", Version: "v0.9.1", Direct: false}, IsArchived: true, ArchivedAt: time.Date(2021, 12, 1, 0, 0, 0, 0, time.UTC), PushedAt: time.Date(2021, 11, 2, 0, 0, 0, 0, time.UTC)},
 	}
 
 	il := NewIgnoreList()
 	il.AddWithReason("github.com/pkg/errors", "Vendored replacement available")
 
 	output := captureStdout(t, func() {
-		PrintIgnoredTable(ignored, il)
+		PrintIgnoredTable(cfg, ignored, il)
 	})
 
 	if !strings.Contains(output, "REASON") {
@@ -2106,8 +1833,9 @@ func TestPrintIgnoredTable_WithReasons(t *testing.T) {
 }
 
 func TestPrintIgnoredTable_Empty(t *testing.T) {
+	cfg := defaultTestConfig()
 	output := captureStdout(t, func() {
-		PrintIgnoredTable(nil, nil)
+		PrintIgnoredTable(cfg, nil, nil)
 	})
 
 	if output != "" {

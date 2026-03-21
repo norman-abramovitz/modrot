@@ -14,9 +14,17 @@ import (
 func main() {
 	// Extract --duration, --stale, and --freshness before reorderArgs and flag.Parse,
 	// since they support optional values which Go's flag package cannot handle.
-	extractDurationFlag()
-	extractStaleFlag()
-	extractAgeFlag()
+	durCfg := extractDurationFlag()
+	staleCfg := extractStaleFlag(durCfg)
+	ageCfg := extractAgeFlag()
+
+	// Update durCfg if stale auto-enabled it
+	if staleCfg.Enabled && !durCfg.Enabled {
+		durCfg.Enabled = true
+		if durCfg.EndDate.IsZero() {
+			durCfg.EndDate = time.Now()
+		}
+	}
 
 	// Reorder args so flags can appear after the positional argument.
 	// Go's flag package stops parsing at the first non-flag argument.
@@ -143,46 +151,62 @@ Examples:
 		os.Exit(0)
 	}
 
-	// Resolve output format: aliases override --format default
-	outputFormat := *formatFlag
+	// Build Config from parsed flags
+	cfg := NewDefaultConfig()
+
+	// Output format: aliases override --format default
+	cfg.OutputFormat = *formatFlag
 	switch {
 	case *jsonFlag:
-		outputFormat = "json"
+		cfg.OutputFormat = "json"
 	case *markdownFlag:
-		outputFormat = "markdown"
+		cfg.OutputFormat = "markdown"
 	case *mermaidFlag:
-		outputFormat = "mermaid"
+		cfg.OutputFormat = "mermaid"
 	case *quickfixFlag:
-		outputFormat = "quickfix"
+		cfg.OutputFormat = "quickfix"
 	}
 
-	// Quickfix implies --files
-	if outputFormat == "quickfix" {
+	// Auto-enable rules
+	if cfg.OutputFormat == "quickfix" {
 		*filesFlag = true
 	}
-
-	// Mermaid implies --tree
-	if outputFormat == "mermaid" {
+	if cfg.OutputFormat == "mermaid" {
 		*treeFlag = true
 	}
 
-	// Set freshness mode from flag
-	if *freshnessFlag {
-		freshnessEnabled = true
-	}
+	cfg.DirectOnly = *directOnly
+	cfg.IgnoreFile = *ignoreFileFlag
+	cfg.IgnoreInline = *ignoreFlag
+	cfg.ShowIgnored = *showIgnoredFlag
+	cfg.NoIgnore = *noIgnoreFlag
+	cfg.Resolve = *resolveFlag
+	cfg.Deprecated = *deprecatedFlag
+	cfg.Freshness = *freshnessFlag
+	cfg.Duration = durCfg
+	cfg.Stale = staleCfg
+	cfg.Age = ageCfg
+	cfg.ShowAll = *allFlag
+	cfg.Tree = *treeFlag
+	cfg.Files = *filesFlag
+	cfg.Stats = *statsFlag
+	cfg.Workers = *workers
+	cfg.GoVersion = *goVersionFlag
+	cfg.GoToolchain = goToolchainVersion()
+	cfg.Recursive = *recursiveFlag
 
 	// Set date format
 	if *timeFlag {
-		dateFmt = "2006-01-02 15:04:05"
+		cfg.DateFmt = "2006-01-02 15:04:05"
 	}
 
-	// Set sort mode and direction (supports "field" or "field:asc" / "field:desc")
-	parseSortFlag(*sortFlag)
+	// Set sort mode and direction
+	cfg.SortMode, cfg.SortReverse = parseSortFlag(*sortFlag)
 
 	// Initialize color support (auto-detects terminal, respects NO_COLOR)
 	// Disable color for non-table formats (JSON, markdown, mermaid, quickfix)
-	noColor := *noColorFlag || outputFormat != "table"
-	if err := initColor(noColor, *colorThresholdFlag); err != nil {
+	noColor := *noColorFlag || cfg.OutputFormat != "table"
+	if err := initColor(cfg, noColor, *colorThresholdFlag); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(2)
 	}
@@ -199,7 +223,7 @@ Examples:
 	}
 
 	// Recursive mode: scan directory tree for all go.mod files
-	if *recursiveFlag {
+	if cfg.Recursive {
 		rootDir := inputPath
 		if info, statErr := os.Stat(rootDir); statErr != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", statErr)
@@ -207,25 +231,7 @@ Examples:
 		} else if !info.IsDir() {
 			rootDir = filepath.Dir(rootDir)
 		}
-		os.Exit(runRecursive(rootDir, runConfig{
-			outputFormat:   outputFormat,
-			showAll:        *allFlag,
-			directOnly:     *directOnly,
-			workers:        *workers,
-			treeMode:       *treeFlag,
-			filesMode:      *filesFlag,
-			resolveMode:    *resolveFlag,
-			deprecatedMode: *deprecatedFlag,
-			freshnessMode:  freshnessEnabled,
-			ageMode:        ageEnabled,
-			goVersion:      *goVersionFlag,
-			goToolchain:    goToolchainVersion(),
-			durationMode:   durationEnabled,
-			durationDate:   durationEndDate,
-			sortMode:       *sortFlag,
-			ignoreFile:     *ignoreFileFlag,
-			ignoreInline:   *ignoreFlag,
-		}))
+		os.Exit(runRecursive(rootDir, cfg))
 	}
 
 	// Single-module mode
@@ -251,7 +257,7 @@ Examples:
 	fmt.Fprintf(os.Stderr, "=== %s — %s (%s) ===\n", relPath, modName, goToolchainVersion())
 
 	// Resolve vanity imports to GitHub repos
-	if *resolveFlag {
+	if cfg.Resolve {
 		resolved := ResolveVanityImports(allModules, 20)
 		if resolved > 0 {
 			fmt.Fprintf(os.Stderr, "Resolved %d non-GitHub modules to GitHub repos.\n", resolved)
@@ -259,7 +265,7 @@ Examples:
 	}
 
 	// Check for deprecated modules via proxy
-	if *deprecatedFlag {
+	if cfg.Deprecated {
 		count := CheckDeprecations(allModules, 20)
 		if count > 0 {
 			fmt.Fprintf(os.Stderr, "Found %d deprecated %s.\n", count, pluralize(count, "module", "modules"))
@@ -267,7 +273,7 @@ Examples:
 	}
 
 	// Filter to GitHub modules and deduplicate
-	githubModules, nonGitHubModules := FilterGitHub(allModules, *directOnly)
+	githubModules, nonGitHubModules := FilterGitHub(allModules, cfg.DirectOnly)
 
 	// Enrich non-GitHub modules with proxy data
 	if len(nonGitHubModules) > 0 {
@@ -275,7 +281,7 @@ Examples:
 	}
 
 	// Enrich all modules with version data (skips already-enriched)
-	if freshnessEnabled || ageEnabled {
+	if cfg.Freshness || cfg.Age.Enabled {
 		EnrichFreshness(allModules, 20)
 	}
 
@@ -287,7 +293,7 @@ Examples:
 	fmt.Fprintf(os.Stderr, "Checking %d GitHub modules...\n", len(githubModules))
 
 	// Query GitHub
-	results, err := CheckRepos(githubModules, *workers)
+	results, err := CheckRepos(githubModules, cfg.Workers)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(2)
@@ -296,8 +302,8 @@ Examples:
 	// Apply ignore list (unless --no-ignore is set)
 	var ignoredResults []RepoStatus
 	ignoreList := NewIgnoreList()
-	if !*noIgnoreFlag {
-		ignoreFilePath := *ignoreFileFlag
+	if !cfg.NoIgnore {
+		ignoreFilePath := cfg.IgnoreFile
 		if ignoreFilePath == "" {
 			ignoreFilePath = filepath.Join(filepath.Dir(gomodPath), ".modrotignore")
 		}
@@ -308,15 +314,15 @@ Examples:
 				ignoreList.AddWithReason(p, reason)
 			}
 		}
-		if *ignoreFlag != "" {
-			inline := ParseIgnoreList(*ignoreFlag)
+		if cfg.IgnoreInline != "" {
+			inline := ParseIgnoreList(cfg.IgnoreInline)
 			for p := range inline.paths {
 				ignoreList.Add(p)
 			}
 		}
 		if ignoreList.Len() > 0 {
 			results, ignoredResults = ignoreList.FilterResults(results)
-			if len(ignoredResults) > 0 && !*showIgnoredFlag {
+			if len(ignoredResults) > 0 && !cfg.ShowIgnored {
 				fmt.Fprintf(os.Stderr, "Ignored %d %s.\n", len(ignoredResults), pluralize(len(ignoredResults), "module", "modules"))
 			}
 		}
@@ -334,7 +340,7 @@ Examples:
 
 	// Scan source files for imports of archived modules
 	var fileMatches map[string][]FileMatch
-	if *filesFlag && hasArchived {
+	if cfg.Files && hasArchived {
 		fm, err := ScanImports(filepath.Dir(gomodPath), archivedModulePaths)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error scanning imports: %v\n", err)
@@ -345,10 +351,10 @@ Examples:
 
 	// Collect deprecated modules for output
 	var deprecatedModules []Module
-	if *deprecatedFlag {
+	if cfg.Deprecated {
 		for _, m := range allModules {
 			if m.Deprecated != "" {
-				if *directOnly && !m.Direct {
+				if cfg.DirectOnly && !m.Direct {
 					continue
 				}
 				deprecatedModules = append(deprecatedModules, m)
@@ -357,49 +363,49 @@ Examples:
 	}
 
 	// Filter stale modules (non-archived repos with old push dates)
-	stale := filterStale(results)
+	stale := filterStale(cfg, results)
 
 	// Handle --tree mode
-	if *treeFlag && hasArchived {
-		graph, err := parseModGraph(filepath.Dir(gomodPath), *goVersionFlag)
+	if cfg.Tree && hasArchived {
+		graph, err := parseModGraph(filepath.Dir(gomodPath), cfg.GoVersion)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", err)
 		} else {
-			switch outputFormat {
+			switch cfg.OutputFormat {
 			case "mermaid":
-				PrintMermaid(results, graph, allModules)
+				PrintMermaid(cfg, results, graph, allModules)
 			case "json":
-				PrintTreeJSON(results, graph, allModules, fileMatches, nonGitHubModules, deprecatedModules)
+				PrintTreeJSON(cfg, results, graph, allModules, fileMatches, nonGitHubModules, deprecatedModules)
 			case "markdown":
-				PrintMarkdownTree(results, graph, allModules, fileMatches)
+				PrintMarkdownTree(cfg, results, graph, allModules, fileMatches)
 				if len(stale) > 0 {
-					PrintMarkdownStale(stale)
+					PrintMarkdownStale(cfg, stale)
 				}
 				if len(deprecatedModules) > 0 {
-					PrintMarkdown(nil, nil, false, deprecatedModules)
+					PrintMarkdown(cfg, nil, nil, deprecatedModules)
 				}
 				if len(nonGitHubModules) > 0 {
-					PrintMarkdownSkipped(nonGitHubModules)
+					PrintMarkdownSkipped(cfg, nonGitHubModules)
 				}
 			default:
-				PrintTree(results, graph, allModules, fileMatches)
+				PrintTree(cfg, results, graph, allModules, fileMatches)
 				if len(stale) > 0 {
-					PrintStaleTable(stale)
+					PrintStaleTable(cfg, stale)
 				}
 				if len(deprecatedModules) > 0 {
 					PrintDeprecatedTable(deprecatedModules)
 				}
 				if len(nonGitHubModules) > 0 {
-					PrintSkippedTable(nonGitHubModules)
+					PrintSkippedTable(cfg, nonGitHubModules)
 				}
-				if ageEnabled {
-					PrintOutdatedTable(results, nonGitHubModules)
+				if cfg.Age.Enabled {
+					PrintOutdatedTable(cfg, results, nonGitHubModules)
 				}
-				if *showIgnoredFlag {
-					PrintIgnoredTable(ignoredResults, ignoreList)
+				if cfg.ShowIgnored {
+					PrintIgnoredTable(cfg, ignoredResults, ignoreList)
 				}
-				if *statsFlag {
-					PrintStats(results, nonGitHubModules, stale, deprecatedModules, *directOnly)
+				if cfg.Stats {
+					PrintStats(cfg, results, nonGitHubModules, stale, deprecatedModules)
 				}
 			}
 			if hasArchived {
@@ -410,41 +416,41 @@ Examples:
 	}
 
 	// Output
-	switch outputFormat {
+	switch cfg.OutputFormat {
 	case "quickfix":
 		if fileMatches != nil {
 			PrintFilesPlain(results, fileMatches)
 		}
 	case "json":
-		PrintJSON(results, nonGitHubModules, *allFlag, fileMatches, stale, deprecatedModules)
+		PrintJSON(cfg, results, nonGitHubModules, fileMatches, stale, deprecatedModules)
 	case "markdown":
-		PrintMarkdown(results, nonGitHubModules, *allFlag, deprecatedModules)
+		PrintMarkdown(cfg, results, nonGitHubModules, deprecatedModules)
 		if fileMatches != nil {
 			PrintMarkdownFiles(results, fileMatches)
 		}
 		if len(stale) > 0 {
-			PrintMarkdownStale(stale)
+			PrintMarkdownStale(cfg, stale)
 		}
 	default:
-		PrintTable(results, nonGitHubModules, *allFlag, deprecatedModules)
+		PrintTable(cfg, results, nonGitHubModules, deprecatedModules)
 		if fileMatches != nil {
 			PrintFiles(results, fileMatches)
 		}
 		if len(stale) > 0 {
-			PrintStaleTable(stale)
+			PrintStaleTable(cfg, stale)
 		}
 	}
 
-	if ageEnabled {
-		PrintOutdatedTable(results, nonGitHubModules)
+	if cfg.Age.Enabled {
+		PrintOutdatedTable(cfg, results, nonGitHubModules)
 	}
 
-	if *showIgnoredFlag {
-		PrintIgnoredTable(ignoredResults, ignoreList)
+	if cfg.ShowIgnored {
+		PrintIgnoredTable(cfg, ignoredResults, ignoreList)
 	}
 
-	if *statsFlag {
-		PrintStats(results, nonGitHubModules, stale, deprecatedModules, *directOnly)
+	if cfg.Stats {
+		PrintStats(cfg, results, nonGitHubModules, stale, deprecatedModules)
 	}
 
 	if hasArchived {
@@ -515,91 +521,89 @@ func goToolchainVersion() string {
 // supports an optional date value (--duration or --duration=2026-01-01).
 // Go's flag package doesn't handle optional-value flags, so we extract
 // this flag before flag.Parse() and remove it from os.Args.
-func extractDurationFlag() {
+func extractDurationFlag() DurationConfig {
+	var cfg DurationConfig
 	var filtered []string
 	for _, arg := range os.Args {
 		switch {
 		case arg == "--duration" || arg == "-duration":
-			durationEnabled = true
-			durationEndDate = time.Now()
+			cfg.Enabled = true
+			cfg.EndDate = time.Now()
 		case strings.HasPrefix(arg, "--duration=") || strings.HasPrefix(arg, "-duration="):
-			durationEnabled = true
+			cfg.Enabled = true
 			dateStr := arg[strings.Index(arg, "=")+1:]
 			t, err := time.Parse("2006-01-02", dateStr)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: invalid duration date %q (expected YYYY-MM-DD)\n", dateStr)
 				os.Exit(2)
 			}
-			durationEndDate = t
+			cfg.EndDate = t
 		default:
 			filtered = append(filtered, arg)
 		}
 	}
 	os.Args = filtered
+	return cfg
 }
 
 // extractStaleFlag scans os.Args for --stale or -stale, which supports
 // an optional threshold value (--stale or --stale=1y6m). Default threshold
-// is 2y. Also auto-enables durationEnabled when --stale is used.
-func extractStaleFlag() {
+// is 2y. Also auto-enables duration when --stale is used.
+func extractStaleFlag(durCfg DurationConfig) StaleConfig {
+	var cfg StaleConfig
 	var filtered []string
 	for _, arg := range os.Args {
 		switch {
 		case arg == "--stale" || arg == "-stale":
-			staleEnabled = true
-			staleYears = 2
-			durationEnabled = true
-			if durationEndDate.IsZero() {
-				durationEndDate = time.Now()
-			}
+			cfg.Enabled = true
+			cfg.Years = 2
 		case strings.HasPrefix(arg, "--stale=") || strings.HasPrefix(arg, "-stale="):
-			staleEnabled = true
+			cfg.Enabled = true
 			threshStr := arg[strings.Index(arg, "=")+1:]
 			y, m, d, err := parseThreshold(threshStr)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: invalid stale threshold %q (expected e.g. 2y, 1y6m, 180d)\n", threshStr)
 				os.Exit(2)
 			}
-			staleYears = y
-			staleMonths = m
-			staleDays = d
-			durationEnabled = true
-			if durationEndDate.IsZero() {
-				durationEndDate = time.Now()
-			}
+			cfg.Years = y
+			cfg.Months = m
+			cfg.Days = d
 		default:
 			filtered = append(filtered, arg)
 		}
 	}
 	os.Args = filtered
+	return cfg
 }
 
 // extractAgeFlag scans os.Args for --age or -age, which supports
 // an optional threshold value (--age or --age=18m). When a threshold
 // is given, only dependencies with a version publish date older than the threshold
 // are shown in the OUTDATED section.
-func extractAgeFlag() {
+func extractAgeFlag() AgeConfig {
+	var cfg AgeConfig
 	var filtered []string
 	for _, arg := range os.Args {
 		switch {
 		case arg == "--age" || arg == "-age":
-			ageEnabled = true
+			cfg.Enabled = true
 		case strings.HasPrefix(arg, "--age=") || strings.HasPrefix(arg, "-age="):
-			ageEnabled = true
+			cfg.Enabled = true
 			threshStr := arg[strings.Index(arg, "=")+1:]
 			y, m, d, err := parseThreshold(threshStr)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: invalid age threshold %q (expected e.g. 1y6m, 18m, 180d)\n", threshStr)
 				os.Exit(2)
 			}
-			ageYears = y
-			ageMonths = m
-			ageDays = d
+			cfg.Years = y
+			cfg.Months = m
+			cfg.Days = d
 		default:
 			filtered = append(filtered, arg)
 		}
 	}
 	os.Args = filtered
+	return cfg
 }
 
 // parseModGraph runs `go mod graph` in the given directory and returns

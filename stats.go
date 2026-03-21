@@ -7,7 +7,7 @@ import (
 )
 
 // PrintStats outputs a summary of dependency health statistics.
-func PrintStats(results []RepoStatus, nonGHModules []Module, stale []RepoStatus, deprecatedModules []Module, directOnly bool) {
+func PrintStats(cfg *Config, results []RepoStatus, nonGHModules []Module, stale []RepoStatus, deprecatedModules []Module) {
 	total := len(results) + len(nonGHModules)
 	if total == 0 {
 		return
@@ -40,7 +40,7 @@ func PrintStats(results []RepoStatus, nonGHModules []Module, stale []RepoStatus,
 	if archived > 0 {
 		_, _ = fmt.Fprintf(os.Stdout, "Archived:                  %d (%.1f%%)\n", archived, pct(archived, total))
 		_, _ = fmt.Fprintf(os.Stdout, "  Direct:                  %d\n", archivedDirect)
-		if directOnly {
+		if cfg.DirectOnly {
 			_, _ = fmt.Fprintf(os.Stdout, "  Indirect:                not evaluated (--direct-only)\n")
 		} else {
 			_, _ = fmt.Fprintf(os.Stdout, "  Indirect:                %d\n", archivedIndirect)

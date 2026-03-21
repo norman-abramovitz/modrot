@@ -30,6 +30,7 @@ func TestPrintMarkdownTable(t *testing.T) {
 }
 
 func TestPrintMarkdown_ArchivedOnly(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
@@ -44,7 +45,7 @@ func TestPrintMarkdown_ArchivedOnly(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintMarkdown(results, nil, false)
+		PrintMarkdown(cfg, results, nil)
 	})
 
 	if !strings.Contains(output, "## ARCHIVED DEPENDENCIES") {
@@ -59,6 +60,8 @@ func TestPrintMarkdown_ArchivedOnly(t *testing.T) {
 }
 
 func TestPrintMarkdown_WithAll(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.ShowAll = true
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
@@ -73,7 +76,7 @@ func TestPrintMarkdown_WithAll(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintMarkdown(results, nil, true)
+		PrintMarkdown(cfg, results, nil)
 	})
 
 	if !strings.Contains(output, "## ACTIVE DEPENDENCIES") {
@@ -85,6 +88,7 @@ func TestPrintMarkdown_WithAll(t *testing.T) {
 }
 
 func TestPrintMarkdown_NoArchived(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/baz/qux", Version: "v2.0.0", Direct: false, Owner: "baz", Repo: "qux"},
@@ -93,7 +97,7 @@ func TestPrintMarkdown_NoArchived(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintMarkdown(results, nil, false)
+		PrintMarkdown(cfg, results, nil)
 	})
 
 	if !strings.Contains(output, "No archived dependencies found") {
@@ -128,15 +132,7 @@ func TestPrintMarkdownFiles(t *testing.T) {
 }
 
 func TestPrintMarkdownStale(t *testing.T) {
-	savedStale := staleEnabled
-	savedY := staleYears
-	defer func() {
-		staleEnabled = savedStale
-		staleYears = savedY
-	}()
-
-	staleEnabled = true
-	staleYears = 2
+	cfg := &Config{Stale: StaleConfig{Enabled: true, Years: 2}, DateFmt: "2006-01-02"}
 
 	stale := []RepoStatus{
 		{
@@ -146,7 +142,7 @@ func TestPrintMarkdownStale(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintMarkdownStale(stale)
+		PrintMarkdownStale(cfg, stale)
 	})
 
 	if !strings.Contains(output, "## STALE DEPENDENCIES") {
@@ -158,6 +154,7 @@ func TestPrintMarkdownStale(t *testing.T) {
 }
 
 func TestPrintMarkdownTree(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/x/y", Version: "v0.1.0", Owner: "x", Repo: "y"},
@@ -178,7 +175,7 @@ func TestPrintMarkdownTree(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintMarkdownTree(results, graph, allModules, nil)
+		PrintMarkdownTree(cfg, results, graph, allModules, nil)
 	})
 
 	if !strings.Contains(output, "## DEPENDENCY TREE") {

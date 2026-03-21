@@ -24,30 +24,28 @@ func TestParseColorThreshold(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			saved := colorConfig
-			defer func() { colorConfig = saved }()
-
-			err := parseColorThreshold(tt.input)
+			thresholds, err := parseColorThreshold(tt.input)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("parseColorThreshold(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
 			}
-			if err == nil && len(colorConfig.thresholds) != tt.wantN {
-				t.Errorf("got %d thresholds, want %d", len(colorConfig.thresholds), tt.wantN)
+			if err == nil && len(thresholds) != tt.wantN {
+				t.Errorf("got %d thresholds, want %d", len(thresholds), tt.wantN)
 			}
 		})
 	}
 }
 
 func TestClassifyAge_FourThresholds(t *testing.T) {
-	saved := colorConfig
-	defer func() { colorConfig = saved }()
-
-	colorConfig.enabled = true
-	colorConfig.thresholds = []colorThreshold{
-		{0, 3, 0}, // 3m
-		{1, 0, 0}, // 1y
-		{2, 0, 0}, // 2y
-		{5, 0, 0}, // 5y
+	cfg := &Config{
+		Color: ColorConfig{
+			Enabled: true,
+			Thresholds: []ColorThreshold{
+				{0, 3, 0}, // 3m
+				{1, 0, 0}, // 1y
+				{2, 0, 0}, // 2y
+				{5, 0, 0}, // 5y
+			},
+		},
 	}
 
 	now := time.Now()
@@ -67,7 +65,7 @@ func TestClassifyAge_FourThresholds(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := classifyAge(tt.t)
+			got := classifyAge(cfg, tt.t)
 			if got != tt.want {
 				t.Errorf("classifyAge() = %d, want %d", got, tt.want)
 			}
@@ -76,13 +74,14 @@ func TestClassifyAge_FourThresholds(t *testing.T) {
 }
 
 func TestClassifyAge_TwoThresholds(t *testing.T) {
-	saved := colorConfig
-	defer func() { colorConfig = saved }()
-
-	colorConfig.enabled = true
-	colorConfig.thresholds = []colorThreshold{
-		{1, 0, 0}, // 1y
-		{3, 0, 0}, // 3y
+	cfg := &Config{
+		Color: ColorConfig{
+			Enabled: true,
+			Thresholds: []ColorThreshold{
+				{1, 0, 0}, // 1y
+				{3, 0, 0}, // 3y
+			},
+		},
 	}
 
 	now := time.Now()
@@ -99,7 +98,7 @@ func TestClassifyAge_TwoThresholds(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := classifyAge(tt.t)
+			got := classifyAge(cfg, tt.t)
 			if got != tt.want {
 				t.Errorf("classifyAge() = %d, want %d", got, tt.want)
 			}
@@ -108,14 +107,15 @@ func TestClassifyAge_TwoThresholds(t *testing.T) {
 }
 
 func TestClassifyAge_ThreeThresholds(t *testing.T) {
-	saved := colorConfig
-	defer func() { colorConfig = saved }()
-
-	colorConfig.enabled = true
-	colorConfig.thresholds = []colorThreshold{
-		{0, 6, 0}, // 6m
-		{1, 0, 0}, // 1y
-		{3, 0, 0}, // 3y
+	cfg := &Config{
+		Color: ColorConfig{
+			Enabled: true,
+			Thresholds: []ColorThreshold{
+				{0, 6, 0}, // 6m
+				{1, 0, 0}, // 1y
+				{3, 0, 0}, // 3y
+			},
+		},
 	}
 
 	now := time.Now()
@@ -133,7 +133,7 @@ func TestClassifyAge_ThreeThresholds(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := classifyAge(tt.t)
+			got := classifyAge(cfg, tt.t)
 			if got != tt.want {
 				t.Errorf("classifyAge() = %d, want %d", got, tt.want)
 			}
@@ -186,70 +186,63 @@ func TestSelectStyle(t *testing.T) {
 }
 
 func TestColorize_Disabled(t *testing.T) {
-	saved := colorConfig
-	defer func() { colorConfig = saved }()
-
-	colorConfig.enabled = false
+	cfg := &Config{Color: ColorConfig{Enabled: false}}
 	input := "2020-01-01"
-	got := colorize(input, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
+	got := colorize(cfg, input, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 	if got != input {
 		t.Errorf("colorize with disabled = %q, want %q", got, input)
 	}
 }
 
 func TestColorize_Enabled(t *testing.T) {
-	saved := colorConfig
-	defer func() { colorConfig = saved }()
-
-	colorConfig.enabled = true
-	colorConfig.thresholds = []colorThreshold{
-		{0, 3, 0},
-		{1, 0, 0},
-		{2, 0, 0},
-		{5, 0, 0},
+	cfg := &Config{
+		Color: ColorConfig{
+			Enabled: true,
+			Thresholds: []ColorThreshold{
+				{0, 3, 0},
+				{1, 0, 0},
+				{2, 0, 0},
+				{5, 0, 0},
+			},
+		},
 	}
 
 	now := time.Now()
 
 	// Recent — should be decorated
 	recent := now.AddDate(0, -1, 0)
-	got := colorize("2025-01-01", recent)
+	got := colorize(cfg, "2025-01-01", recent)
 	if got == "2025-01-01" {
 		t.Errorf("newest level should be decorated")
 	}
 
 	// Critical — should be decorated differently
 	old := now.AddDate(-6, 0, 0)
-	got = colorize("2020-01-01", old)
+	got = colorize(cfg, "2020-01-01", old)
 	if got == "2020-01-01" {
 		t.Errorf("critical level should be decorated")
 	}
 
 	// Zero time — no decoration
-	got = colorize("", time.Time{})
+	got = colorize(cfg, "", time.Time{})
 	if got != "" {
 		t.Errorf("zero time should not be decorated, got %q", got)
 	}
 }
 
 func TestInitColor_NoColor(t *testing.T) {
-	saved := colorConfig
-	defer func() { colorConfig = saved }()
-
-	err := initColor(true, "")
+	cfg := NewDefaultConfig()
+	err := initColor(cfg, true, "")
 	if err != nil {
 		t.Fatalf("initColor error: %v", err)
 	}
-	if colorConfig.enabled {
+	if cfg.Color.Enabled {
 		t.Error("expected color disabled with noColor=true")
 	}
 }
 
 func TestInitColor_InvalidThreshold(t *testing.T) {
-	saved := colorConfig
-	defer func() { colorConfig = saved }()
-
-	err := parseColorThreshold("bad")
+	_, err := parseColorThreshold("bad")
 	if err == nil {
 		t.Error("expected error for invalid threshold")
 	}

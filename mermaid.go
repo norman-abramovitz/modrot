@@ -29,7 +29,7 @@ func mermaidLabel(modulePath, version string) string {
 
 // PrintMermaid outputs a Mermaid flowchart diagram showing archived dependencies.
 // Only paths leading to archived deps are shown (unrelated branches are pruned).
-func PrintMermaid(results []RepoStatus, graph map[string][]string, allModules []Module) {
+func PrintMermaid(cfg *Config, results []RepoStatus, graph map[string][]string, allModules []Module) {
 	entries, ctx := buildTree(results, graph, allModules)
 
 	_, _ = fmt.Fprintln(os.Stdout, "graph TD")

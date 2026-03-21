@@ -10,36 +10,12 @@ import (
 	"time"
 )
 
-// dateFmt controls the date format used in output. Default is date-only;
-// set to "2006-01-02 15:04:05" with --time flag to include time.
-var dateFmt = "2006-01-02"
-
-// durationEnabled and durationEndDate control the --duration feature.
-var (
-	durationEnabled bool
-	durationEndDate time.Time
-)
-
-// staleEnabled, staleThreshold control the --stale feature.
-var (
-	staleEnabled bool
-	staleYears   int
-	staleMonths  int
-	staleDays    int
-)
-
-// sortMode controls the sort field for archived modules: "name", "duration", "pushed".
-var sortMode = "name"
-
-// sortReverse reverses the sort direction when true (desc instead of asc).
-var sortReverse bool
-
 // fmtDate formats a time using the current dateFmt setting.
-func fmtDate(t time.Time) string {
+func fmtDate(cfg *Config, t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return t.Format(dateFmt)
+	return t.Format(cfg.DateFmt)
 }
 
 // calcDuration computes the calendar duration (years, months, days) between
@@ -70,18 +46,18 @@ func calcDuration(archivedAt, endDate time.Time) (years, months, days int) {
 // formatDuration returns a compact ISO 8601-style duration string for how long
 // a dependency has been archived (e.g. "3y11m7d"). Returns "" if duration mode
 // is off or the archived date is zero.
-func formatDuration(archivedAt time.Time) string {
-	return formatDurationShort(archivedAt)
+func formatDuration(cfg *Config, archivedAt time.Time) string {
+	return formatDurationShort(cfg, archivedAt)
 }
 
 // formatDurationShort returns a compact ISO 8601-style duration string
 // (e.g. "2y3m15d"). Returns "" if duration mode is off or the archived
 // date is zero.
-func formatDurationShort(archivedAt time.Time) string {
-	if !durationEnabled || archivedAt.IsZero() {
+func formatDurationShort(cfg *Config, archivedAt time.Time) string {
+	if !cfg.Duration.Enabled || archivedAt.IsZero() {
 		return ""
 	}
-	y, m, d := calcDuration(archivedAt, durationEndDate)
+	y, m, d := calcDuration(archivedAt, cfg.Duration.EndDate)
 	var parts []string
 	if y > 0 {
 		parts = append(parts, fmt.Sprintf("%dy", y))
@@ -152,8 +128,8 @@ func exceedsThreshold(pushedAt time.Time, y, m, d int) bool {
 
 // filterStale returns repos whose PushedAt exceeds the stale threshold
 // and are not archived or not-found.
-func filterStale(results []RepoStatus) []RepoStatus {
-	if !staleEnabled {
+func filterStale(cfg *Config, results []RepoStatus) []RepoStatus {
+	if !cfg.Stale.Enabled {
 		return nil
 	}
 	var stale []RepoStatus
@@ -161,7 +137,7 @@ func filterStale(results []RepoStatus) []RepoStatus {
 		if r.IsArchived || r.NotFound {
 			continue
 		}
-		if exceedsThreshold(r.PushedAt, staleYears, staleMonths, staleDays) {
+		if exceedsThreshold(r.PushedAt, cfg.Stale.Years, cfg.Stale.Months, cfg.Stale.Days) {
 			stale = append(stale, r)
 		}
 	}
@@ -169,23 +145,23 @@ func filterStale(results []RepoStatus) []RepoStatus {
 }
 
 // formatThreshold returns a human-readable threshold string (e.g. "2y", "1y6m").
-func formatThreshold() string {
+func formatThreshold(cfg *Config) string {
 	var parts []string
-	if staleYears > 0 {
-		parts = append(parts, fmt.Sprintf("%dy", staleYears))
+	if cfg.Stale.Years > 0 {
+		parts = append(parts, fmt.Sprintf("%dy", cfg.Stale.Years))
 	}
-	if staleMonths > 0 {
-		parts = append(parts, fmt.Sprintf("%dm", staleMonths))
+	if cfg.Stale.Months > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", cfg.Stale.Months))
 	}
-	if staleDays > 0 {
-		parts = append(parts, fmt.Sprintf("%dd", staleDays))
+	if cfg.Stale.Days > 0 {
+		parts = append(parts, fmt.Sprintf("%dd", cfg.Stale.Days))
 	}
 	return strings.Join(parts, "")
 }
 
 // PrintStaleTable outputs a section listing modules that haven't been pushed
 // in longer than the stale threshold.
-func PrintStaleTable(stale []RepoStatus) {
+func PrintStaleTable(cfg *Config, stale []RepoStatus) {
 	if len(stale) == 0 {
 		return
 	}
@@ -193,13 +169,13 @@ func PrintStaleTable(stale []RepoStatus) {
 		return stale[i].Module.Path < stale[j].Module.Path
 	})
 	_, _ = fmt.Fprintf(os.Stderr, "\nSTALE DEPENDENCIES (%d %s not pushed in >%s)\n\n",
-		len(stale), pluralize(len(stale), "module", "modules"), formatThreshold())
+		len(stale), pluralize(len(stale), "module", "modules"), formatThreshold(cfg))
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	if durationEnabled && freshnessEnabled {
+	if cfg.Duration.Enabled && cfg.Freshness {
 		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED\tINACTIVE\tLATEST\tBEHIND")
-	} else if durationEnabled {
+	} else if cfg.Duration.Enabled {
 		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED\tINACTIVE")
-	} else if freshnessEnabled {
+	} else if cfg.Freshness {
 		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED\tLATEST\tBEHIND")
 	} else {
 		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED")
@@ -209,19 +185,19 @@ func PrintStaleTable(stale []RepoStatus) {
 		if r.Module.Direct {
 			direct = "direct"
 		}
-		pushedAt := colorize(fmtDate(r.PushedAt), r.PushedAt)
-		if durationEnabled && freshnessEnabled {
-			dur := formatDurationShort(r.PushedAt)
+		pushedAt := colorize(cfg, fmtDate(cfg, r.PushedAt), r.PushedAt)
+		if cfg.Duration.Enabled && cfg.Freshness {
+			dur := formatDurationShort(cfg, r.PushedAt)
 			latest := r.Module.LatestVersion
 			if latest != "" && latest == r.Module.Version {
 				latest = "-"
 			}
 			behind := formatBehind(r.Module)
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt, dur, latest, behind)
-		} else if durationEnabled {
-			dur := formatDurationShort(r.PushedAt)
+		} else if cfg.Duration.Enabled {
+			dur := formatDurationShort(cfg, r.PushedAt)
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt, dur)
-		} else if freshnessEnabled {
+		} else if cfg.Freshness {
 			latest := r.Module.LatestVersion
 			if latest != "" && latest == r.Module.Version {
 				latest = "-"
@@ -237,20 +213,20 @@ func PrintStaleTable(stale []RepoStatus) {
 
 // PrintOutdatedTable outputs a section listing modules whose version publish date
 // exceeds the age threshold. Only shown when --age=THRESHOLD is set.
-func PrintOutdatedTable(results []RepoStatus, nonGHModules []Module) {
-	threshold := formatAgeThreshold()
+func PrintOutdatedTable(cfg *Config, results []RepoStatus, nonGHModules []Module) {
+	threshold := formatAgeThreshold(cfg)
 	if threshold == "" {
 		return
 	}
 
 	var outdated []Module
 	for _, r := range results {
-		if exceedsAgeThreshold(r.Module) {
+		if exceedsAgeThreshold(cfg, r.Module) {
 			outdated = append(outdated, r.Module)
 		}
 	}
 	for _, m := range nonGHModules {
-		if exceedsAgeThreshold(m) {
+		if exceedsAgeThreshold(cfg, m) {
 			outdated = append(outdated, m)
 		}
 	}
@@ -263,7 +239,7 @@ func PrintOutdatedTable(results []RepoStatus, nonGHModules []Module) {
 	_, _ = fmt.Fprintf(os.Stderr, "\nOUTDATED DEPENDENCIES (%d %s with version published >%s ago)\n\n",
 		len(outdated), pluralize(len(outdated), "module", "modules"), threshold)
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	if freshnessEnabled {
+	if cfg.Freshness {
 		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tLATEST\tBEHIND\tAGE\tDIRECT\tPUBLISHED")
 	} else {
 		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tAGE\tDIRECT\tPUBLISHED")
@@ -281,9 +257,9 @@ func PrintOutdatedTable(results []RepoStatus, nonGHModules []Module) {
 		age := formatAge(m)
 		published := ""
 		if !m.VersionTime.IsZero() {
-			published = fmtDate(m.VersionTime)
+			published = fmtDate(cfg, m.VersionTime)
 		}
-		if freshnessEnabled {
+		if cfg.Freshness {
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, latest, behind, age, direct, published)
 		} else {
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, age, direct, published)
@@ -294,7 +270,7 @@ func PrintOutdatedTable(results []RepoStatus, nonGHModules []Module) {
 
 // PrintIgnoredTable outputs a section listing ignored modules and their current state.
 // If ignoreList is provided, reasons from .modrotignore inline comments are shown.
-func PrintIgnoredTable(ignored []RepoStatus, ignoreList *IgnoreList) {
+func PrintIgnoredTable(cfg *Config, ignored []RepoStatus, ignoreList *IgnoreList) {
 	if len(ignored) == 0 {
 		return
 	}
@@ -332,11 +308,11 @@ func PrintIgnoredTable(ignored []RepoStatus, ignoreList *IgnoreList) {
 		}
 		archivedAt := ""
 		if !r.ArchivedAt.IsZero() {
-			archivedAt = fmtDate(r.ArchivedAt)
+			archivedAt = fmtDate(cfg, r.ArchivedAt)
 		}
 		pushedAt := ""
 		if !r.PushedAt.IsZero() {
-			pushedAt = fmtDate(r.PushedAt)
+			pushedAt = fmtDate(cfg, r.PushedAt)
 		}
 		if hasReasons {
 			reason := ""
@@ -354,7 +330,7 @@ func PrintIgnoredTable(ignored []RepoStatus, ignoreList *IgnoreList) {
 }
 
 // parseSortFlag parses a sort flag value like "name", "pushed:asc", or "duration:desc"
-// into the sortMode and sortReverse globals.
+// into mode and reverse values.
 //
 // Default directions (when no suffix is given):
 //   - name: asc (A→Z)
@@ -362,29 +338,30 @@ func PrintIgnoredTable(ignored []RepoStatus, ignoreList *IgnoreList) {
 //   - pushed: desc (pushed longest ago first)
 //
 // Appending the opposite suffix reverses the order.
-func parseSortFlag(val string) {
+func parseSortFlag(val string) (mode string, reverse bool) {
 	field, dir, hasSep := strings.Cut(val, ":")
-	sortMode = field
+	mode = field
 	if !hasSep {
-		sortReverse = false // default direction for each field
-		return
+		reverse = false // default direction for each field
+		return mode, reverse
 	}
 	switch field {
 	case "duration", "pushed":
 		// Default is desc (oldest first); :asc reverses to newest first
-		sortReverse = (dir == "asc")
+		reverse = (dir == "asc")
 	default: // "name"
 		// Default is asc (A→Z); :desc reverses to Z→A
-		sortReverse = (dir == "desc")
+		reverse = (dir == "desc")
 	}
+	return mode, reverse
 }
 
 // sortResults sorts a slice of RepoStatus based on the current sortMode and sortReverse.
-func sortResults(results []RepoStatus) {
-	switch sortMode {
+func sortResults(cfg *Config, results []RepoStatus) {
+	switch cfg.SortMode {
 	case "duration":
 		sort.Slice(results, func(i, j int) bool {
-			if sortReverse {
+			if cfg.SortReverse {
 				i, j = j, i
 			}
 			// Oldest archived first (earliest ArchivedAt) in asc order
@@ -401,7 +378,7 @@ func sortResults(results []RepoStatus) {
 		})
 	case "pushed":
 		sort.Slice(results, func(i, j int) bool {
-			if sortReverse {
+			if cfg.SortReverse {
 				i, j = j, i
 			}
 			// Oldest pushed first (earliest PushedAt) in asc order
@@ -418,7 +395,7 @@ func sortResults(results []RepoStatus) {
 		})
 	default: // "name"
 		sort.Slice(results, func(i, j int) bool {
-			if sortReverse {
+			if cfg.SortReverse {
 				i, j = j, i
 			}
 			return results[i].Module.Path < results[j].Module.Path
@@ -427,13 +404,13 @@ func sortResults(results []RepoStatus) {
 }
 
 // PrintSkippedTable outputs a section listing non-GitHub modules with enrichment data.
-func PrintSkippedTable(modules []Module) {
+func PrintSkippedTable(cfg *Config, modules []Module) {
 	sort.Slice(modules, func(i, j int) bool {
 		return modules[i].Path < modules[j].Path
 	})
 	_, _ = fmt.Fprintf(os.Stderr, "\nNON-GITHUB MODULES (%d non-GitHub %s)\n\n", len(modules), pluralize(len(modules), "module", "modules"))
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	if freshnessEnabled {
+	if cfg.Freshness {
 		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tLATEST\tBEHIND\tDIRECT\tPUBLISHED\tSOURCE")
 	} else {
 		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tLATEST\tDIRECT\tPUBLISHED\tSOURCE")
@@ -447,8 +424,8 @@ func PrintSkippedTable(modules []Module) {
 		if latest != "" && latest == m.Version {
 			latest = "-"
 		}
-		published := fmtDate(m.VersionTime)
-		if freshnessEnabled {
+		published := fmtDate(cfg, m.VersionTime)
+		if cfg.Freshness {
 			behind := formatBehind(m)
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, latest, behind, direct, published, m.SourceURL)
 		} else {
@@ -459,26 +436,26 @@ func PrintSkippedTable(modules []Module) {
 }
 
 // printArchivedRows writes archived module rows to a tabwriter.
-func printArchivedRows(w *tabwriter.Writer, archived []RepoStatus) {
+func printArchivedRows(cfg *Config, w *tabwriter.Writer, archived []RepoStatus) {
 	for _, r := range archived {
 		direct := "indirect"
 		if r.Module.Direct {
 			direct = "direct"
 		}
-		archivedAt := colorize(fmtDate(r.ArchivedAt), r.ArchivedAt)
-		pushedAt := colorize(fmtDate(r.PushedAt), r.PushedAt)
-		if durationEnabled && freshnessEnabled {
-			dur := formatDuration(r.ArchivedAt)
+		archivedAt := colorize(cfg, fmtDate(cfg, r.ArchivedAt), r.ArchivedAt)
+		pushedAt := colorize(cfg, fmtDate(cfg, r.PushedAt), r.PushedAt)
+		if cfg.Duration.Enabled && cfg.Freshness {
+			dur := formatDuration(cfg, r.ArchivedAt)
 			latest := r.Module.LatestVersion
 			if latest != "" && latest == r.Module.Version {
 				latest = "-"
 			}
 			behind := formatBehind(r.Module)
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, dur, pushedAt, latest, behind)
-		} else if durationEnabled {
-			dur := formatDuration(r.ArchivedAt)
+		} else if cfg.Duration.Enabled {
+			dur := formatDuration(cfg, r.ArchivedAt)
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, dur, pushedAt)
-		} else if freshnessEnabled {
+		} else if cfg.Freshness {
 			latest := r.Module.LatestVersion
 			if latest != "" && latest == r.Module.Version {
 				latest = "-"
@@ -493,7 +470,7 @@ func printArchivedRows(w *tabwriter.Writer, archived []RepoStatus) {
 
 // PrintTable outputs archived (or all) results in a human-readable table.
 // If deprecatedModules is non-nil, a DEPRECATED MODULES section is appended.
-func PrintTable(results []RepoStatus, nonGitHubModules []Module, showAll bool, deprecatedModules ...[]Module) {
+func PrintTable(cfg *Config, results []RepoStatus, nonGitHubModules []Module, deprecatedModules ...[]Module) {
 	// Separate archived, not-found, and active
 	var archived, notFound, active []RepoStatus
 	for _, r := range results {
@@ -516,19 +493,19 @@ func PrintTable(results []RepoStatus, nonGitHubModules []Module, showAll bool, d
 			archivedIndirect = append(archivedIndirect, r)
 		}
 	}
-	sortResults(archivedDirect)
-	sortResults(archivedIndirect)
+	sortResults(cfg, archivedDirect)
+	sortResults(cfg, archivedIndirect)
 
 	totalChecked := len(results)
 
 	if len(archived) > 0 {
 		_, _ = fmt.Fprintf(os.Stderr, "\nARCHIVED DEPENDENCIES (%d of %d github.com modules)\n\n", len(archived), totalChecked)
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		if durationEnabled && freshnessEnabled {
+		if cfg.Duration.Enabled && cfg.Freshness {
 			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tARCHIVED AT\tDURATION\tLAST PUSHED\tLATEST\tBEHIND")
-		} else if durationEnabled {
+		} else if cfg.Duration.Enabled {
 			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tARCHIVED AT\tDURATION\tLAST PUSHED")
-		} else if freshnessEnabled {
+		} else if cfg.Freshness {
 			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tARCHIVED AT\tLAST PUSHED\tLATEST\tBEHIND")
 		} else {
 			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tARCHIVED AT\tLAST PUSHED")
@@ -538,14 +515,14 @@ func PrintTable(results []RepoStatus, nonGitHubModules []Module, showAll bool, d
 		if len(archivedDirect) > 0 && len(archivedIndirect) > 0 {
 			_, _ = fmt.Fprintf(w, "\t\t\t\n")
 			_, _ = fmt.Fprintf(w, "Direct (%d)\t\t\t\n", len(archivedDirect))
-			printArchivedRows(w, archivedDirect)
+			printArchivedRows(cfg, w, archivedDirect)
 			_, _ = fmt.Fprintf(w, "\t\t\t\n")
 			_, _ = fmt.Fprintf(w, "Indirect (%d)\t\t\t\n", len(archivedIndirect))
-			printArchivedRows(w, archivedIndirect)
+			printArchivedRows(cfg, w, archivedIndirect)
 		} else {
 			// Only one group exists, no sub-headers needed
 			all := append(archivedDirect, archivedIndirect...)
-			printArchivedRows(w, all)
+			printArchivedRows(cfg, w, all)
 		}
 		_ = w.Flush()
 	} else {
@@ -559,13 +536,13 @@ func PrintTable(results []RepoStatus, nonGitHubModules []Module, showAll bool, d
 		}
 	}
 
-	if showAll && len(active) > 0 {
+	if cfg.ShowAll && len(active) > 0 {
 		_, _ = fmt.Fprintf(os.Stderr, "\nACTIVE DEPENDENCIES (%d modules)\n\n", len(active))
 		sort.Slice(active, func(i, j int) bool {
 			return active[i].Module.Path < active[j].Module.Path
 		})
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		if freshnessEnabled {
+		if cfg.Freshness {
 			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED\tLATEST\tBEHIND")
 		} else {
 			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED")
@@ -575,8 +552,8 @@ func PrintTable(results []RepoStatus, nonGitHubModules []Module, showAll bool, d
 			if r.Module.Direct {
 				direct = "direct"
 			}
-			pushedAt := fmtDate(r.PushedAt)
-			if freshnessEnabled {
+			pushedAt := fmtDate(cfg, r.PushedAt)
+			if cfg.Freshness {
 				latest := r.Module.LatestVersion
 				if latest != "" && latest == r.Module.Version {
 					latest = "-"
@@ -610,7 +587,7 @@ func PrintTable(results []RepoStatus, nonGitHubModules []Module, showAll bool, d
 	}
 
 	if len(nonGitHubModules) > 0 {
-		PrintSkippedTable(nonGitHubModules)
+		PrintSkippedTable(cfg, nonGitHubModules)
 	}
 }
 
@@ -693,7 +670,7 @@ type JSONSkippedModule struct {
 	Version       string `json:"version"`
 	Direct        bool   `json:"direct"`
 	LatestVersion string `json:"latest_version,omitempty"`
-	Behind       string `json:"behind,omitempty"`
+	Behind        string `json:"behind,omitempty"`
 	Published     string `json:"published,omitempty"`
 	Host          string `json:"host,omitempty"`
 	SourceURL     string `json:"source_url,omitempty"`
@@ -723,7 +700,7 @@ type JSONModule struct {
 	Error             string           `json:"error,omitempty"`
 	DeprecatedMessage string           `json:"deprecated_message,omitempty"`
 	LatestVersion     string           `json:"latest_version,omitempty"`
-	Behind           string           `json:"behind,omitempty"`
+	Behind            string           `json:"behind,omitempty"`
 	SourceFiles       []JSONSourceFile `json:"source_files,omitempty"`
 }
 
@@ -746,7 +723,7 @@ type JSONSourceFile struct {
 
 // buildJSONOutput creates the JSONOutput data structure without writing it.
 // staleResults and deprecatedModules are optional; pass nil if not applicable.
-func buildJSONOutput(results []RepoStatus, nonGitHubModules []Module, showAll bool, fileMatches map[string][]FileMatch, staleResults []RepoStatus, deprecatedModules ...[]Module) JSONOutput {
+func buildJSONOutput(cfg *Config, results []RepoStatus, nonGitHubModules []Module, fileMatches map[string][]FileMatch, staleResults []RepoStatus, deprecatedModules ...[]Module) JSONOutput {
 	out := JSONOutput{
 		NonGitHubCount: len(nonGitHubModules),
 		TotalChecked:   len(results),
@@ -769,7 +746,7 @@ func buildJSONOutput(results []RepoStatus, nonGitHubModules []Module, showAll bo
 		if m.SourceURL != "" {
 			jsm.SourceURL = m.SourceURL
 		}
-		if freshnessEnabled {
+		if cfg.Freshness {
 			if va := formatBehind(m); va != "" && va != "-" {
 				jsm.Behind = va
 			}
@@ -788,7 +765,7 @@ func buildJSONOutput(results []RepoStatus, nonGitHubModules []Module, showAll bo
 		if !r.PushedAt.IsZero() {
 			jm.PushedAt = r.PushedAt.Format("2006-01-02T15:04:05Z")
 		}
-		if freshnessEnabled {
+		if cfg.Freshness {
 			setJSONFreshness(&jm, r.Module)
 		}
 
@@ -800,7 +777,7 @@ func buildJSONOutput(results []RepoStatus, nonGitHubModules []Module, showAll bo
 			if !r.ArchivedAt.IsZero() {
 				jm.ArchivedAt = r.ArchivedAt.Format("2006-01-02T15:04:05Z")
 			}
-			if dur := formatDuration(r.ArchivedAt); dur != "" {
+			if dur := formatDuration(cfg, r.ArchivedAt); dur != "" {
 				jm.ArchivedDuration = dur
 			}
 			if fileMatches != nil {
@@ -814,7 +791,7 @@ func buildJSONOutput(results []RepoStatus, nonGitHubModules []Module, showAll bo
 			}
 			out.Archived = append(out.Archived, jm)
 		default:
-			if showAll {
+			if cfg.ShowAll {
 				out.Active = append(out.Active, jm)
 			}
 		}
@@ -832,7 +809,7 @@ func buildJSONOutput(results []RepoStatus, nonGitHubModules []Module, showAll bo
 		if !r.PushedAt.IsZero() {
 			jm.PushedAt = r.PushedAt.Format("2006-01-02T15:04:05Z")
 		}
-		if freshnessEnabled {
+		if cfg.Freshness {
 			setJSONFreshness(&jm, r.Module)
 		}
 		out.Stale = append(out.Stale, jm)
@@ -858,8 +835,8 @@ func buildJSONOutput(results []RepoStatus, nonGitHubModules []Module, showAll bo
 // PrintJSON outputs results as JSON. If fileMatches is non-nil, archived
 // modules will include source_files arrays.
 // staleResults and deprecatedModules are optional; pass nil if not applicable.
-func PrintJSON(results []RepoStatus, nonGitHubModules []Module, showAll bool, fileMatches map[string][]FileMatch, staleResults []RepoStatus, deprecatedModules ...[]Module) {
-	out := buildJSONOutput(results, nonGitHubModules, showAll, fileMatches, staleResults, deprecatedModules...)
+func PrintJSON(cfg *Config, results []RepoStatus, nonGitHubModules []Module, fileMatches map[string][]FileMatch, staleResults []RepoStatus, deprecatedModules ...[]Module) {
+	out := buildJSONOutput(cfg, results, nonGitHubModules, fileMatches, staleResults, deprecatedModules...)
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(out)
@@ -867,7 +844,7 @@ func PrintJSON(results []RepoStatus, nonGitHubModules []Module, showAll bool, fi
 
 // formatArchivedLine returns a formatted string with version, archived date, and last pushed date.
 // modPath and version come from the go.mod entry; rs provides the archived/pushed dates from GitHub.
-func formatArchivedLine(modPath, version string, rs RepoStatus) string {
+func formatArchivedLine(cfg *Config, modPath, version string, rs RepoStatus) string {
 	var b strings.Builder
 	b.WriteString(modPath)
 	if version != "" {
@@ -877,15 +854,15 @@ func formatArchivedLine(modPath, version string, rs RepoStatus) string {
 	b.WriteString(" [ARCHIVED")
 	if !rs.ArchivedAt.IsZero() {
 		b.WriteString(" ")
-		b.WriteString(fmtDate(rs.ArchivedAt))
+		b.WriteString(fmtDate(cfg, rs.ArchivedAt))
 	}
-	if dur := formatDurationShort(rs.ArchivedAt); dur != "" {
+	if dur := formatDurationShort(cfg, rs.ArchivedAt); dur != "" {
 		b.WriteString(", ")
 		b.WriteString(dur)
 	}
 	if !rs.PushedAt.IsZero() {
 		b.WriteString(", last pushed ")
-		b.WriteString(fmtDate(rs.PushedAt))
+		b.WriteString(fmtDate(cfg, rs.PushedAt))
 	}
 	b.WriteString("]")
 	return b.String()
@@ -1029,7 +1006,7 @@ func buildTree(results []RepoStatus, graph map[string][]string, allModules []Mod
 // PrintTree outputs a dependency tree showing which direct dependencies
 // pull in archived indirect dependencies. If fileMatches is non-nil,
 // file counts are appended to archived labels.
-func PrintTree(results []RepoStatus, graph map[string][]string, allModules []Module, fileMatches map[string][]FileMatch) {
+func PrintTree(cfg *Config, results []RepoStatus, graph map[string][]string, allModules []Module, fileMatches map[string][]FileMatch) {
 	entries, ctx := buildTree(results, graph, allModules)
 
 	if entries == nil {
@@ -1064,7 +1041,7 @@ func PrintTree(results []RepoStatus, graph map[string][]string, allModules []Mod
 	for _, e := range entries {
 		if ctx.archivedPaths[e.directPath] {
 			if rs, ok := ctx.getStatus(e.directPath); ok {
-				fmt.Printf("%s%s%s\n", formatArchivedLine(e.directPath, ctx.versionByPath[e.directPath], rs), deprecatedSuffix(e.directPath), fileCountSuffix(e.directPath))
+				fmt.Printf("%s%s%s\n", formatArchivedLine(cfg, e.directPath, ctx.versionByPath[e.directPath], rs), deprecatedSuffix(e.directPath), fileCountSuffix(e.directPath))
 			} else {
 				fmt.Printf("%s [ARCHIVED]%s%s\n", e.directPath, deprecatedSuffix(e.directPath), fileCountSuffix(e.directPath))
 			}
@@ -1087,7 +1064,7 @@ func PrintTree(results []RepoStatus, graph map[string][]string, allModules []Mod
 				connector = "└── "
 			}
 			if rs, ok := ctx.getStatus(a); ok {
-				fmt.Printf("  %s%s%s%s\n", connector, formatArchivedLine(a, ctx.versionByPath[a], rs), deprecatedSuffix(a), fileCountSuffix(a))
+				fmt.Printf("  %s%s%s%s\n", connector, formatArchivedLine(cfg, a, ctx.versionByPath[a], rs), deprecatedSuffix(a), fileCountSuffix(a))
 			} else {
 				fmt.Printf("  %s%s [ARCHIVED]%s%s\n", connector, a, deprecatedSuffix(a), fileCountSuffix(a))
 			}
@@ -1130,7 +1107,7 @@ type JSONTreeArchivedDep struct {
 
 // buildTreeJSONOutput creates the JSONTreeOutput data structure without writing it.
 // deprecatedModules is optional; if provided, the first element is used.
-func buildTreeJSONOutput(results []RepoStatus, graph map[string][]string, allModules []Module, fileMatches map[string][]FileMatch, nonGitHubModules []Module, deprecatedModules ...[]Module) JSONTreeOutput {
+func buildTreeJSONOutput(cfg *Config, results []RepoStatus, graph map[string][]string, allModules []Module, fileMatches map[string][]FileMatch, nonGitHubModules []Module, deprecatedModules ...[]Module) JSONTreeOutput {
 	entries, ctx := buildTree(results, graph, allModules)
 
 	out := JSONTreeOutput{
@@ -1155,7 +1132,7 @@ func buildTreeJSONOutput(results []RepoStatus, graph map[string][]string, allMod
 		if m.SourceURL != "" {
 			jsm.SourceURL = m.SourceURL
 		}
-		if freshnessEnabled {
+		if cfg.Freshness {
 			if va := formatBehind(m); va != "" && va != "-" {
 				jsm.Behind = va
 			}
@@ -1210,7 +1187,7 @@ func buildTreeJSONOutput(results []RepoStatus, graph map[string][]string, allMod
 				if !rs.ArchivedAt.IsZero() {
 					entry.ArchivedAt = rs.ArchivedAt.Format("2006-01-02T15:04:05Z")
 				}
-				if dur := formatDuration(rs.ArchivedAt); dur != "" {
+				if dur := formatDuration(cfg, rs.ArchivedAt); dur != "" {
 					entry.ArchivedDuration = dur
 				}
 				if !rs.PushedAt.IsZero() {
@@ -1236,7 +1213,7 @@ func buildTreeJSONOutput(results []RepoStatus, graph map[string][]string, allMod
 				if !rs.ArchivedAt.IsZero() {
 					dep.ArchivedAt = rs.ArchivedAt.Format("2006-01-02T15:04:05Z")
 				}
-				if dur := formatDuration(rs.ArchivedAt); dur != "" {
+				if dur := formatDuration(cfg, rs.ArchivedAt); dur != "" {
 					dep.ArchivedDuration = dur
 				}
 				if !rs.PushedAt.IsZero() {
@@ -1255,8 +1232,8 @@ func buildTreeJSONOutput(results []RepoStatus, graph map[string][]string, allMod
 
 // PrintTreeJSON outputs the dependency tree as JSON.
 // deprecatedModules is optional; if provided, the first element is used.
-func PrintTreeJSON(results []RepoStatus, graph map[string][]string, allModules []Module, fileMatches map[string][]FileMatch, nonGitHubModules []Module, deprecatedModules ...[]Module) {
-	out := buildTreeJSONOutput(results, graph, allModules, fileMatches, nonGitHubModules, deprecatedModules...)
+func PrintTreeJSON(cfg *Config, results []RepoStatus, graph map[string][]string, allModules []Module, fileMatches map[string][]FileMatch, nonGitHubModules []Module, deprecatedModules ...[]Module) {
+	out := buildTreeJSONOutput(cfg, results, graph, allModules, fileMatches, nonGitHubModules, deprecatedModules...)
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(out)

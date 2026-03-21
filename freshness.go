@@ -6,18 +6,6 @@ import (
 	"time"
 )
 
-// freshnessEnabled controls the --freshness feature (LATEST + BEHIND columns).
-var freshnessEnabled bool
-
-// ageEnabled controls the --age feature (AGE column).
-// ageYears/Months/Days hold the optional threshold for the OUTDATED section.
-var (
-	ageEnabled bool
-	ageYears   int
-	ageMonths  int
-	ageDays    int
-)
-
 // formatBehind returns a compact duration string representing the time
 // between the current version's publish date and the latest version's
 // publish date (e.g. "2y4m"). Returns "-" when current == latest version,
@@ -48,27 +36,27 @@ func formatAge(m Module) string {
 // exceedsAgeThreshold returns true if the module's version publish date
 // is older than the age threshold relative to now. Returns false if
 // no threshold is set (all zeros) or if version time is unavailable.
-func exceedsAgeThreshold(m Module) bool {
-	if ageYears == 0 && ageMonths == 0 && ageDays == 0 {
+func exceedsAgeThreshold(cfg *Config, m Module) bool {
+	if cfg.Age.Years == 0 && cfg.Age.Months == 0 && cfg.Age.Days == 0 {
 		return true // no threshold → show all
 	}
 	if m.VersionTime.IsZero() {
 		return false
 	}
-	return exceedsThreshold(m.VersionTime, ageYears, ageMonths, ageDays)
+	return exceedsThreshold(m.VersionTime, cfg.Age.Years, cfg.Age.Months, cfg.Age.Days)
 }
 
 // formatAgeThreshold formats the threshold as a compact string for display.
-func formatAgeThreshold() string {
+func formatAgeThreshold(cfg *Config) string {
 	var parts []string
-	if ageYears > 0 {
-		parts = append(parts, fmt.Sprintf("%dy", ageYears))
+	if cfg.Age.Years > 0 {
+		parts = append(parts, fmt.Sprintf("%dy", cfg.Age.Years))
 	}
-	if ageMonths > 0 {
-		parts = append(parts, fmt.Sprintf("%dm", ageMonths))
+	if cfg.Age.Months > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", cfg.Age.Months))
 	}
-	if ageDays > 0 {
-		parts = append(parts, fmt.Sprintf("%dd", ageDays))
+	if cfg.Age.Days > 0 {
+		parts = append(parts, fmt.Sprintf("%dd", cfg.Age.Days))
 	}
 	return strings.Join(parts, "")
 }

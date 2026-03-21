@@ -37,6 +37,7 @@ func TestMermaidLabel(t *testing.T) {
 }
 
 func TestPrintMermaid_BasicTree(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/x/y", Version: "v0.1.0", Owner: "x", Repo: "y"},
@@ -57,7 +58,7 @@ func TestPrintMermaid_BasicTree(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintMermaid(results, graph, allModules)
+		PrintMermaid(cfg, results, graph, allModules)
 	})
 
 	if !strings.Contains(output, "graph TD") {
@@ -78,6 +79,7 @@ func TestPrintMermaid_BasicTree(t *testing.T) {
 }
 
 func TestPrintMermaid_DirectArchived(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/a/b", Version: "v1.0.0", Owner: "a", Repo: "b"},
@@ -96,7 +98,7 @@ func TestPrintMermaid_DirectArchived(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintMermaid(results, graph, allModules)
+		PrintMermaid(cfg, results, graph, allModules)
 	})
 
 	if !strings.Contains(output, ":::archived") {
@@ -105,6 +107,7 @@ func TestPrintMermaid_DirectArchived(t *testing.T) {
 }
 
 func TestPrintMermaid_NoArchived(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/a/b", Owner: "a", Repo: "b"},
@@ -122,7 +125,7 @@ func TestPrintMermaid_NoArchived(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintMermaid(results, graph, allModules)
+		PrintMermaid(cfg, results, graph, allModules)
 	})
 
 	if !strings.Contains(output, "graph TD") {
@@ -134,6 +137,7 @@ func TestPrintMermaid_NoArchived(t *testing.T) {
 }
 
 func TestPrintMermaid_DeprecatedClass(t *testing.T) {
+	cfg := defaultTestConfig()
 	results := []RepoStatus{
 		{
 			Module:     Module{Path: "github.com/x/y", Version: "v0.1.0", Owner: "x", Repo: "y", Deprecated: "Use something else"},
@@ -153,7 +157,7 @@ func TestPrintMermaid_DeprecatedClass(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintMermaid(results, graph, allModules)
+		PrintMermaid(cfg, results, graph, allModules)
 	})
 
 	if !strings.Contains(output, ":::deprecated") {

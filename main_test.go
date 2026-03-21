@@ -102,21 +102,13 @@ func TestReorderArgs(t *testing.T) {
 
 func TestExtractDurationFlag_NoFlag(t *testing.T) {
 	saved := os.Args
-	savedEnabled := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		os.Args = saved
-		durationEnabled = savedEnabled
-		durationEndDate = savedEnd
-	}()
+	defer func() { os.Args = saved }()
 
-	durationEnabled = false
-	durationEndDate = time.Time{}
 	os.Args = []string{"cmd", "--files", "path/go.mod"}
-	extractDurationFlag()
+	durCfg := extractDurationFlag()
 
-	if durationEnabled {
-		t.Error("expected durationEnabled=false when no --duration flag")
+	if durCfg.Enabled {
+		t.Error("expected Enabled=false when no --duration flag")
 	}
 	// Args should be unchanged
 	if len(os.Args) != 3 {
@@ -126,24 +118,16 @@ func TestExtractDurationFlag_NoFlag(t *testing.T) {
 
 func TestExtractDurationFlag_BareFlag(t *testing.T) {
 	saved := os.Args
-	savedEnabled := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		os.Args = saved
-		durationEnabled = savedEnabled
-		durationEndDate = savedEnd
-	}()
+	defer func() { os.Args = saved }()
 
-	durationEnabled = false
-	durationEndDate = time.Time{}
 	os.Args = []string{"cmd", "--duration", "--files", "path/go.mod"}
-	extractDurationFlag()
+	durCfg := extractDurationFlag()
 
-	if !durationEnabled {
-		t.Error("expected durationEnabled=true")
+	if !durCfg.Enabled {
+		t.Error("expected Enabled=true")
 	}
-	if durationEndDate.IsZero() {
-		t.Error("expected durationEndDate to be set to today")
+	if durCfg.EndDate.IsZero() {
+		t.Error("expected EndDate to be set to today")
 	}
 	// --duration should be removed from args
 	for _, arg := range os.Args {
@@ -158,25 +142,17 @@ func TestExtractDurationFlag_BareFlag(t *testing.T) {
 
 func TestExtractDurationFlag_WithDate(t *testing.T) {
 	saved := os.Args
-	savedEnabled := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		os.Args = saved
-		durationEnabled = savedEnabled
-		durationEndDate = savedEnd
-	}()
+	defer func() { os.Args = saved }()
 
-	durationEnabled = false
-	durationEndDate = time.Time{}
 	os.Args = []string{"cmd", "--duration=2026-01-15", "--files"}
-	extractDurationFlag()
+	durCfg := extractDurationFlag()
 
-	if !durationEnabled {
-		t.Error("expected durationEnabled=true")
+	if !durCfg.Enabled {
+		t.Error("expected Enabled=true")
 	}
 	want := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
-	if !durationEndDate.Equal(want) {
-		t.Errorf("durationEndDate = %v, want %v", durationEndDate, want)
+	if !durCfg.EndDate.Equal(want) {
+		t.Errorf("EndDate = %v, want %v", durCfg.EndDate, want)
 	}
 	// --duration=DATE should be removed from args
 	if len(os.Args) != 2 {
@@ -186,60 +162,41 @@ func TestExtractDurationFlag_WithDate(t *testing.T) {
 
 func TestExtractDurationFlag_SingleDash(t *testing.T) {
 	saved := os.Args
-	savedEnabled := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		os.Args = saved
-		durationEnabled = savedEnabled
-		durationEndDate = savedEnd
-	}()
+	defer func() { os.Args = saved }()
 
-	durationEnabled = false
 	os.Args = []string{"cmd", "-duration"}
-	extractDurationFlag()
+	durCfg := extractDurationFlag()
 
-	if !durationEnabled {
-		t.Error("expected durationEnabled=true with single dash")
+	if !durCfg.Enabled {
+		t.Error("expected Enabled=true with single dash")
 	}
 }
 
 func TestExtractDurationFlag_SingleDashWithDate(t *testing.T) {
 	saved := os.Args
-	savedEnabled := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		os.Args = saved
-		durationEnabled = savedEnabled
-		durationEndDate = savedEnd
-	}()
+	defer func() { os.Args = saved }()
 
-	durationEnabled = false
 	os.Args = []string{"cmd", "-duration=2025-06-15"}
-	extractDurationFlag()
+	durCfg := extractDurationFlag()
 
-	if !durationEnabled {
-		t.Error("expected durationEnabled=true with single dash and date")
+	if !durCfg.Enabled {
+		t.Error("expected Enabled=true with single dash and date")
 	}
 	want := time.Date(2025, 6, 15, 0, 0, 0, 0, time.UTC)
-	if !durationEndDate.Equal(want) {
-		t.Errorf("durationEndDate = %v, want %v", durationEndDate, want)
+	if !durCfg.EndDate.Equal(want) {
+		t.Errorf("EndDate = %v, want %v", durCfg.EndDate, want)
 	}
 }
 
 func TestExtractStaleFlag_NoFlag(t *testing.T) {
 	saved := os.Args
-	savedStale := staleEnabled
-	defer func() {
-		os.Args = saved
-		staleEnabled = savedStale
-	}()
+	defer func() { os.Args = saved }()
 
-	staleEnabled = false
 	os.Args = []string{"cmd", "--files", "path/go.mod"}
-	extractStaleFlag()
+	staleCfg := extractStaleFlag(DurationConfig{})
 
-	if staleEnabled {
-		t.Error("expected staleEnabled=false when no --stale flag")
+	if staleCfg.Enabled {
+		t.Error("expected Enabled=false when no --stale flag")
 	}
 	if len(os.Args) != 3 {
 		t.Errorf("expected 3 args, got %d: %v", len(os.Args), os.Args)
@@ -248,35 +205,16 @@ func TestExtractStaleFlag_NoFlag(t *testing.T) {
 
 func TestExtractStaleFlag_BareFlag(t *testing.T) {
 	saved := os.Args
-	savedStale := staleEnabled
-	savedY := staleYears
-	savedM := staleMonths
-	savedD := staleDays
-	savedDuration := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		os.Args = saved
-		staleEnabled = savedStale
-		staleYears = savedY
-		staleMonths = savedM
-		staleDays = savedD
-		durationEnabled = savedDuration
-		durationEndDate = savedEnd
-	}()
+	defer func() { os.Args = saved }()
 
-	staleEnabled = false
-	durationEnabled = false
 	os.Args = []string{"cmd", "--stale", "--files"}
-	extractStaleFlag()
+	staleCfg := extractStaleFlag(DurationConfig{})
 
-	if !staleEnabled {
-		t.Error("expected staleEnabled=true")
+	if !staleCfg.Enabled {
+		t.Error("expected Enabled=true")
 	}
-	if staleYears != 2 {
-		t.Errorf("expected default staleYears=2, got %d", staleYears)
-	}
-	if !durationEnabled {
-		t.Error("expected durationEnabled=true (auto-enabled by --stale)")
+	if staleCfg.Years != 2 {
+		t.Errorf("expected default Years=2, got %d", staleCfg.Years)
 	}
 	for _, arg := range os.Args {
 		if arg == "--stale" {
@@ -287,31 +225,15 @@ func TestExtractStaleFlag_BareFlag(t *testing.T) {
 
 func TestExtractStaleFlag_WithThreshold(t *testing.T) {
 	saved := os.Args
-	savedStale := staleEnabled
-	savedY := staleYears
-	savedM := staleMonths
-	savedD := staleDays
-	savedDuration := durationEnabled
-	savedEnd := durationEndDate
-	defer func() {
-		os.Args = saved
-		staleEnabled = savedStale
-		staleYears = savedY
-		staleMonths = savedM
-		staleDays = savedD
-		durationEnabled = savedDuration
-		durationEndDate = savedEnd
-	}()
+	defer func() { os.Args = saved }()
 
-	staleEnabled = false
-	durationEnabled = false
 	os.Args = []string{"cmd", "--stale=1y6m"}
-	extractStaleFlag()
+	staleCfg := extractStaleFlag(DurationConfig{})
 
-	if !staleEnabled {
-		t.Error("expected staleEnabled=true")
+	if !staleCfg.Enabled {
+		t.Error("expected Enabled=true")
 	}
-	if staleYears != 1 || staleMonths != 6 || staleDays != 0 {
-		t.Errorf("threshold = (%d, %d, %d), want (1, 6, 0)", staleYears, staleMonths, staleDays)
+	if staleCfg.Years != 1 || staleCfg.Months != 6 || staleCfg.Days != 0 {
+		t.Errorf("threshold = (%d, %d, %d), want (1, 6, 0)", staleCfg.Years, staleCfg.Months, staleCfg.Days)
 	}
 }

@@ -6,29 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
-
-// runConfig holds parsed flag values for runRecursive.
-type runConfig struct {
-	outputFormat   string // "table", "json", "markdown", "mermaid", "quickfix"
-	showAll        bool
-	directOnly     bool
-	workers        int
-	treeMode       bool
-	filesMode      bool
-	resolveMode    bool
-	deprecatedMode bool
-	freshnessMode  bool
-	ageMode        bool
-	goVersion      string
-	goToolchain    string // e.g. "go1.23.4" from `go version`
-	durationMode   bool
-	durationDate   time.Time
-	sortMode       string // e.g. "name", "pushed:desc"
-	ignoreFile     string
-	ignoreInline   string
-}
 
 // findGoModFiles walks the directory tree rooted at dir and returns
 // paths to all go.mod files found. It skips vendor/, testdata/, and
@@ -116,7 +94,7 @@ func getDeprecatedModules(allModules []Module, directOnly bool, deprecatedMode b
 // runRecursive scans a directory tree for go.mod files, queries GitHub
 // once for all unique repos, and outputs per-module results.
 // Returns the exit code (0 = clean, 1 = archived found, 2 = error).
-func runRecursive(rootDir string, cfg runConfig) int {
+func runRecursive(rootDir string, cfg *Config) int {
 	gomodPaths, err := findGoModFiles(rootDir)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error scanning directory: %v\n", err)
@@ -146,7 +124,7 @@ func runRecursive(rootDir string, cfg runConfig) int {
 	}
 
 	// Phase 2: Resolve vanity imports (before filtering)
-	if cfg.resolveMode {
+	if cfg.Resolve {
 		resolved := resolveAcrossModules(modules)
 		if resolved > 0 {
 			_, _ = fmt.Fprintf(os.Stderr, "Resolved %d non-GitHub modules to GitHub repos.\n", resolved)
@@ -154,7 +132,7 @@ func runRecursive(rootDir string, cfg runConfig) int {
 	}
 
 	// Phase 2.5: Check deprecations (before filtering)
-	if cfg.deprecatedMode {
+	if cfg.Deprecated {
 		count := checkDeprecationsAcrossModules(modules)
 		if count > 0 {
 			_, _ = fmt.Fprintf(os.Stderr, "Found %d deprecated %s.\n", count, pluralize(count, "module", "modules"))
@@ -165,7 +143,7 @@ func runRecursive(rootDir string, cfg runConfig) int {
 	var allGitHub []Module
 	globalSeen := make(map[string]bool)
 	for i := range modules {
-		ghMods, nonGH := FilterGitHub(modules[i].allModules, cfg.directOnly)
+		ghMods, nonGH := FilterGitHub(modules[i].allModules, cfg.DirectOnly)
 		modules[i].githubModules = ghMods
 		modules[i].nonGHModules = nonGH
 
@@ -182,7 +160,7 @@ func runRecursive(rootDir string, cfg runConfig) int {
 	enrichAcrossModules(modules)
 
 	// Phase 3.6: Enrich all modules with freshness data (skips already-enriched)
-	if cfg.freshnessMode {
+	if cfg.Freshness {
 		enrichFreshnessAcrossModules(modules)
 	}
 
@@ -199,7 +177,7 @@ func runRecursive(rootDir string, cfg runConfig) int {
 	_, _ = fmt.Fprintf(os.Stderr, "Found %d go.mod files, checking %d unique GitHub repos...\n", len(modules), len(allGitHub))
 
 	// Query GitHub once for all unique repos
-	globalResults, err := CheckRepos(allGitHub, cfg.workers)
+	globalResults, err := CheckRepos(allGitHub, cfg.Workers)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 2
@@ -213,7 +191,7 @@ func runRecursive(rootDir string, cfg runConfig) int {
 
 	hasAnyArchived := false
 
-	switch cfg.outputFormat {
+	switch cfg.OutputFormat {
 	case "quickfix":
 		hasAnyArchived = runRecursiveQuickfix(modules, statusMap, cfg)
 	case "json":
@@ -231,13 +209,13 @@ func runRecursive(rootDir string, cfg runConfig) int {
 }
 
 // runRecursiveQuickfix outputs quickfix-format lines across all modules.
-func runRecursiveQuickfix(modules []moduleInfo, statusMap map[string]RepoStatus, cfg runConfig) bool {
+func runRecursiveQuickfix(modules []moduleInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	hasAnyArchived := false
 
 	for _, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
 
-		il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.ignoreFile, cfg.ignoreInline)
+		il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.IgnoreFile, cfg.IgnoreInline)
 		if il.Len() > 0 {
 			results, _ = il.FilterResults(results)
 		}
@@ -258,17 +236,17 @@ func runRecursiveQuickfix(modules []moduleInfo, statusMap map[string]RepoStatus,
 }
 
 // runRecursiveJSON outputs recursive results as a single JSON document.
-func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg runConfig) bool {
+func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	hasAnyArchived := false
 
-	if cfg.treeMode {
+	if cfg.Tree {
 		out := RecursiveJSONTreeOutput{Modules: []RecursiveJSONTreeEntry{}}
 
 		for _, mi := range modules {
 			results := applyStatus(mi.githubModules, statusMap)
 
 			// Apply ignore list
-			il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.ignoreFile, cfg.ignoreInline)
+			il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.IgnoreFile, cfg.IgnoreInline)
 			if il.Len() > 0 {
 				results, _ = il.FilterResults(results)
 			}
@@ -279,7 +257,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 			}
 
 			var fileMatches map[string][]FileMatch
-			if cfg.filesMode && len(archivedPaths) > 0 {
+			if cfg.Files && len(archivedPaths) > 0 {
 				fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
 				if err != nil {
 					_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
@@ -288,18 +266,18 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 				}
 			}
 
-			graph, err := parseModGraph(filepath.Dir(mi.gomodPath), cfg.goVersion)
+			graph, err := parseModGraph(filepath.Dir(mi.gomodPath), cfg.GoVersion)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph for %s: %v\n", mi.relPath, err)
 				graph = map[string][]string{}
 			}
 
-			deprecatedModules := getDeprecatedModules(mi.allModules, cfg.directOnly, cfg.deprecatedMode)
-			treeOut := buildTreeJSONOutput(results, graph, mi.allModules, fileMatches, mi.nonGHModules, deprecatedModules)
+			deprecatedModules := getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated)
+			treeOut := buildTreeJSONOutput(cfg, results, graph, mi.allModules, fileMatches, mi.nonGHModules, deprecatedModules)
 			out.Modules = append(out.Modules, RecursiveJSONTreeEntry{
 				GoMod:          mi.relPath,
 				ModulePath:     mi.moduleName,
-				GoVersion:      cfg.goToolchain,
+				GoVersion:      cfg.GoToolchain,
 				JSONTreeOutput: treeOut,
 			})
 		}
@@ -314,7 +292,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 			results := applyStatus(mi.githubModules, statusMap)
 
 			// Apply ignore list
-			il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.ignoreFile, cfg.ignoreInline)
+			il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.IgnoreFile, cfg.IgnoreInline)
 			if il.Len() > 0 {
 				results, _ = il.FilterResults(results)
 			}
@@ -325,7 +303,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 			}
 
 			var fileMatches map[string][]FileMatch
-			if cfg.filesMode && len(archivedPaths) > 0 {
+			if cfg.Files && len(archivedPaths) > 0 {
 				fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
 				if err != nil {
 					_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
@@ -334,13 +312,13 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 				}
 			}
 
-			deprecatedModules := getDeprecatedModules(mi.allModules, cfg.directOnly, cfg.deprecatedMode)
-			stale := filterStale(results)
-			jsonOut := buildJSONOutput(results, mi.nonGHModules, cfg.showAll, fileMatches, stale, deprecatedModules)
+			deprecatedModules := getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated)
+			stale := filterStale(cfg, results)
+			jsonOut := buildJSONOutput(cfg, results, mi.nonGHModules, fileMatches, stale, deprecatedModules)
 			out.Modules = append(out.Modules, RecursiveJSONEntry{
 				GoMod:      mi.relPath,
 				ModulePath: mi.moduleName,
-				GoVersion:  cfg.goToolchain,
+				GoVersion:  cfg.GoToolchain,
 				JSONOutput: jsonOut,
 			})
 		}
@@ -354,14 +332,14 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 }
 
 // runRecursiveMarkdown outputs recursive results as Markdown with per-module headers.
-func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus, cfg runConfig) bool {
+func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	hasAnyArchived := false
 
 	for i, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
 
 		// Apply ignore list
-		il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.ignoreFile, cfg.ignoreInline)
+		il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.IgnoreFile, cfg.IgnoreInline)
 		if il.Len() > 0 {
 			var ignored []RepoStatus
 			results, ignored = il.FilterResults(results)
@@ -379,7 +357,7 @@ func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus,
 		if i > 0 {
 			_, _ = fmt.Fprintln(os.Stdout)
 		}
-		_, _ = fmt.Fprintf(os.Stdout, "# %s — %s (%s)\n\n", mi.relPath, mi.moduleName, cfg.goToolchain)
+		_, _ = fmt.Fprintf(os.Stdout, "# %s — %s (%s)\n\n", mi.relPath, mi.moduleName, cfg.GoToolchain)
 
 		if len(mi.githubModules) == 0 {
 			_, _ = fmt.Fprintf(os.Stdout, "No GitHub modules found.\n")
@@ -387,7 +365,7 @@ func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus,
 		}
 
 		var fileMatches map[string][]FileMatch
-		if cfg.filesMode && hasArchived {
+		if cfg.Files && hasArchived {
 			fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports: %v\n", err)
@@ -396,34 +374,34 @@ func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus,
 			}
 		}
 
-		deprecatedModules := getDeprecatedModules(mi.allModules, cfg.directOnly, cfg.deprecatedMode)
-		stale := filterStale(results)
+		deprecatedModules := getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated)
+		stale := filterStale(cfg, results)
 
-		if cfg.treeMode && hasArchived {
-			graph, err := parseModGraph(filepath.Dir(mi.gomodPath), cfg.goVersion)
+		if cfg.Tree && hasArchived {
+			graph, err := parseModGraph(filepath.Dir(mi.gomodPath), cfg.GoVersion)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", err)
 			} else {
-				PrintMarkdownTree(results, graph, mi.allModules, fileMatches)
+				PrintMarkdownTree(cfg, results, graph, mi.allModules, fileMatches)
 				if len(stale) > 0 {
-					PrintMarkdownStale(stale)
+					PrintMarkdownStale(cfg, stale)
 				}
 				if len(deprecatedModules) > 0 {
-					PrintMarkdown(nil, nil, false, deprecatedModules)
+					PrintMarkdown(cfg, nil, nil, deprecatedModules)
 				}
 				if len(mi.nonGHModules) > 0 {
-					PrintMarkdownSkipped(mi.nonGHModules)
+					PrintMarkdownSkipped(cfg, mi.nonGHModules)
 				}
 				continue
 			}
 		}
 
-		PrintMarkdown(results, mi.nonGHModules, cfg.showAll, deprecatedModules)
+		PrintMarkdown(cfg, results, mi.nonGHModules, deprecatedModules)
 		if fileMatches != nil {
 			PrintMarkdownFiles(results, fileMatches)
 		}
 		if len(stale) > 0 {
-			PrintMarkdownStale(stale)
+			PrintMarkdownStale(cfg, stale)
 		}
 	}
 
@@ -431,14 +409,14 @@ func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus,
 }
 
 // runRecursiveText outputs recursive results as text with per-module headers.
-func runRecursiveText(modules []moduleInfo, statusMap map[string]RepoStatus, cfg runConfig) bool {
+func runRecursiveText(modules []moduleInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	hasAnyArchived := false
 
 	for i, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
 
 		// Apply ignore list
-		il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.ignoreFile, cfg.ignoreInline)
+		il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.IgnoreFile, cfg.IgnoreInline)
 		if il.Len() > 0 {
 			var ignored []RepoStatus
 			results, ignored = il.FilterResults(results)
@@ -456,7 +434,7 @@ func runRecursiveText(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 		if i > 0 {
 			_, _ = fmt.Fprintln(os.Stderr)
 		}
-		_, _ = fmt.Fprintf(os.Stderr, "=== %s — %s (%s) ===\n", mi.relPath, mi.moduleName, cfg.goToolchain)
+		_, _ = fmt.Fprintf(os.Stderr, "=== %s — %s (%s) ===\n", mi.relPath, mi.moduleName, cfg.GoToolchain)
 
 		if len(mi.githubModules) == 0 {
 			_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found.\n")
@@ -464,7 +442,7 @@ func runRecursiveText(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 		}
 
 		var fileMatches map[string][]FileMatch
-		if cfg.filesMode && hasArchived {
+		if cfg.Files && hasArchived {
 			fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports: %v\n", err)
@@ -473,38 +451,38 @@ func runRecursiveText(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 			}
 		}
 
-		deprecatedModules := getDeprecatedModules(mi.allModules, cfg.directOnly, cfg.deprecatedMode)
-		stale := filterStale(results)
+		deprecatedModules := getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated)
+		stale := filterStale(cfg, results)
 
-		if cfg.treeMode && hasArchived {
-			graph, err := parseModGraph(filepath.Dir(mi.gomodPath), cfg.goVersion)
+		if cfg.Tree && hasArchived {
+			graph, err := parseModGraph(filepath.Dir(mi.gomodPath), cfg.GoVersion)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", err)
 			} else {
-				if cfg.outputFormat == "mermaid" {
-					PrintMermaid(results, graph, mi.allModules)
+				if cfg.OutputFormat == "mermaid" {
+					PrintMermaid(cfg, results, graph, mi.allModules)
 				} else {
-					PrintTree(results, graph, mi.allModules, fileMatches)
+					PrintTree(cfg, results, graph, mi.allModules, fileMatches)
 					if len(stale) > 0 {
-						PrintStaleTable(stale)
+						PrintStaleTable(cfg, stale)
 					}
 					if len(deprecatedModules) > 0 {
 						PrintDeprecatedTable(deprecatedModules)
 					}
 					if len(mi.nonGHModules) > 0 {
-						PrintSkippedTable(mi.nonGHModules)
+						PrintSkippedTable(cfg, mi.nonGHModules)
 					}
 				}
 				continue
 			}
 		}
 
-		PrintTable(results, mi.nonGHModules, cfg.showAll, deprecatedModules)
+		PrintTable(cfg, results, mi.nonGHModules, deprecatedModules)
 		if fileMatches != nil {
 			PrintFiles(results, fileMatches)
 		}
 		if len(stale) > 0 {
-			PrintStaleTable(stale)
+			PrintStaleTable(cfg, stale)
 		}
 	}
 

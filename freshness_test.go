@@ -235,54 +235,48 @@ func TestEnrichFreshnessShortCircuit(t *testing.T) {
 }
 
 func TestExceedsAgeThreshold(t *testing.T) {
-	savedY, savedM, savedD := ageYears, ageMonths, ageDays
-	defer func() { ageYears, ageMonths, ageDays = savedY, savedM, savedD }()
-
 	now := time.Now()
 
 	// No threshold set → always true
-	ageYears, ageMonths, ageDays = 0, 0, 0
+	cfg := &Config{Age: AgeConfig{Enabled: true}}
 	m := Module{VersionTime: now.AddDate(0, -1, 0)}
-	if !exceedsAgeThreshold(m) {
+	if !exceedsAgeThreshold(cfg, m) {
 		t.Error("no threshold should return true")
 	}
 
 	// 18m threshold, version 2 years old → exceeds
-	ageYears, ageMonths, ageDays = 0, 18, 0
+	cfg = &Config{Age: AgeConfig{Enabled: true, Months: 18}}
 	m = Module{VersionTime: now.AddDate(-2, 0, 0)}
-	if !exceedsAgeThreshold(m) {
+	if !exceedsAgeThreshold(cfg, m) {
 		t.Error("2y old version should exceed 18m threshold")
 	}
 
 	// 18m threshold, version 6 months old → does not exceed
 	m = Module{VersionTime: now.AddDate(0, -6, 0)}
-	if exceedsAgeThreshold(m) {
+	if exceedsAgeThreshold(cfg, m) {
 		t.Error("6m old version should not exceed 18m threshold")
 	}
 
 	// Zero version time → false
 	m = Module{}
-	if exceedsAgeThreshold(m) {
+	if exceedsAgeThreshold(cfg, m) {
 		t.Error("zero version time should return false")
 	}
 }
 
 func TestFormatAgeThreshold(t *testing.T) {
-	savedY, savedM, savedD := ageYears, ageMonths, ageDays
-	defer func() { ageYears, ageMonths, ageDays = savedY, savedM, savedD }()
-
-	ageYears, ageMonths, ageDays = 1, 6, 0
-	if got := formatAgeThreshold(); got != "1y6m" {
+	cfg := &Config{Age: AgeConfig{Years: 1, Months: 6}}
+	if got := formatAgeThreshold(cfg); got != "1y6m" {
 		t.Errorf("formatAgeThreshold() = %q, want %q", got, "1y6m")
 	}
 
-	ageYears, ageMonths, ageDays = 0, 18, 0
-	if got := formatAgeThreshold(); got != "18m" {
+	cfg = &Config{Age: AgeConfig{Months: 18}}
+	if got := formatAgeThreshold(cfg); got != "18m" {
 		t.Errorf("formatAgeThreshold() = %q, want %q", got, "18m")
 	}
 
-	ageYears, ageMonths, ageDays = 0, 0, 0
-	if got := formatAgeThreshold(); got != "" {
+	cfg = &Config{Age: AgeConfig{}}
+	if got := formatAgeThreshold(cfg); got != "" {
 		t.Errorf("formatAgeThreshold() = %q, want empty", got)
 	}
 }
