@@ -4,6 +4,8 @@ Detect archived GitHub dependencies in Go projects.
 
 Parses your `go.mod`, queries the GitHub GraphQL API in batches, and reports which dependencies have been archived upstream.
 
+Archived dependencies no longer receive security patches, bug fixes, or compatibility updates. They can silently become liabilities — vulnerable to known exploits, incompatible with newer Go versions, or abandoned without a migration path. The sooner you know, the more options you have.
+
 ## Install
 
 ### Homebrew
@@ -28,7 +30,7 @@ go build -o modrot .
 
 ## Prerequisites
 
-- [GitHub CLI](https://cli.github.com/) (`gh`) installed and authenticated — used to obtain your GitHub API token
+- [GitHub CLI](https://cli.github.com/) (`gh`) installed and authenticated — used to obtain your GitHub API token. After installing, run `gh auth login` to authenticate.
 - [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) — required only for `--files` flag
 
 ## Usage
@@ -445,6 +447,20 @@ Skips `vendor/`, `testdata/`, and hidden directories. Combines with all other fl
 ```
 $ modrot --recursive --json --deprecated --resolve /path/to/monorepo
 ```
+
+## Troubleshooting
+
+**"failed to get GitHub token (is gh installed and authenticated?)"**
+Install the [GitHub CLI](https://cli.github.com/) and run `gh auth login`.
+
+**"Error: could not parse go.mod"**
+Ensure the path points to a valid `go.mod` file or a directory containing one.
+
+**GitHub API rate limits**
+modrot batches queries (default 50 repos per request) to minimize API calls. If you hit rate limits on very large projects, reduce the batch size with `--workers 20`.
+
+**No archived dependencies found but you expected some**
+Non-GitHub modules (e.g., `golang.org/x/*`, `k8s.io/*`) are listed separately as they cannot be checked for archive status via the GitHub API. Use `--resolve` to resolve vanity imports to their GitHub repos.
 
 ## Development
 

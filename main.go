@@ -127,6 +127,15 @@ Examples:
 	}
 	flag.Parse()
 
+	// Detect common help patterns passed as positional arguments
+	if flag.NArg() > 0 {
+		arg := flag.Arg(0)
+		if arg == "help" || arg == "-h" {
+			flag.Usage()
+			os.Exit(0)
+		}
+	}
+
 	if *versionFlag {
 		printVersion()
 		os.Exit(0)
