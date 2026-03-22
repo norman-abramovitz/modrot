@@ -54,55 +54,14 @@ func PrintMarkdown(cfg *Config, results []RepoStatus, nonGitHubModules []Module,
 
 	if len(archived) > 0 {
 		_, _ = fmt.Fprintf(os.Stdout, "## ARCHIVED DEPENDENCIES (%d of %d github.com modules)\n\n", len(archived), totalChecked)
-
-		var headers []string
-		if cfg.Duration.Enabled && cfg.Freshness {
-			headers = []string{"Module", "Version", "Direct", "Archived At", "Duration", "Last Pushed", "Latest", "Behind"}
-		} else if cfg.Duration.Enabled {
-			headers = []string{"Module", "Version", "Direct", "Archived At", "Duration", "Last Pushed"}
-		} else if cfg.Freshness {
-			headers = []string{"Module", "Version", "Direct", "Archived At", "Last Pushed", "Latest", "Behind"}
-		} else {
-			headers = []string{"Module", "Version", "Direct", "Archived At", "Last Pushed"}
-		}
-
-		buildRows := func(results []RepoStatus) [][]string {
+		headers := archivedHeaders(cfg)
+		buildRows := func(rs []RepoStatus) [][]string {
 			var rows [][]string
-			for _, r := range results {
-				direct := "indirect"
-				if r.Module.Direct {
-					direct = "direct"
-				}
-				latest := r.Module.LatestVersion
-				if latest != "" && latest == r.Module.Version {
-					latest = "-"
-				}
-				behind := formatBehind(r.Module)
-				if cfg.Duration.Enabled && cfg.Freshness {
-					rows = append(rows, []string{
-						r.Module.Path, r.Module.Version, direct,
-						fmtDate(cfg, r.ArchivedAt), formatDuration(cfg, r.ArchivedAt), fmtDate(cfg, r.PushedAt), latest, behind,
-					})
-				} else if cfg.Duration.Enabled {
-					rows = append(rows, []string{
-						r.Module.Path, r.Module.Version, direct,
-						fmtDate(cfg, r.ArchivedAt), formatDuration(cfg, r.ArchivedAt), fmtDate(cfg, r.PushedAt),
-					})
-				} else if cfg.Freshness {
-					rows = append(rows, []string{
-						r.Module.Path, r.Module.Version, direct,
-						fmtDate(cfg, r.ArchivedAt), fmtDate(cfg, r.PushedAt), latest, behind,
-					})
-				} else {
-					rows = append(rows, []string{
-						r.Module.Path, r.Module.Version, direct,
-						fmtDate(cfg, r.ArchivedAt), fmtDate(cfg, r.PushedAt),
-					})
-				}
+			for _, r := range rs {
+				rows = append(rows, archivedRow(cfg, r))
 			}
 			return rows
 		}
-
 		if len(archivedDirect) > 0 && len(archivedIndirect) > 0 {
 			_, _ = fmt.Fprintf(os.Stdout, "### Direct (%d)\n\n", len(archivedDirect))
 			printMarkdownTable(os.Stdout, headers, buildRows(archivedDirect))
@@ -128,54 +87,43 @@ func PrintMarkdown(cfg *Config, results []RepoStatus, nonGitHubModules []Module,
 		sort.Slice(active, func(i, j int) bool {
 			return active[i].Module.Path < active[j].Module.Path
 		})
-		var headers []string
+		headers := []string{"Module", "Version", "Direct", "Last Pushed"}
 		if cfg.Freshness {
-			headers = []string{"Module", "Version", "Direct", "Last Pushed", "Latest", "Behind"}
-		} else {
-			headers = []string{"Module", "Version", "Direct", "Last Pushed"}
+			headers = append(headers, "Latest", "Behind")
 		}
 		var rows [][]string
 		for _, r := range active {
-			direct := "indirect"
-			if r.Module.Direct {
-				direct = "direct"
-			}
+			row := []string{r.Module.Path, r.Module.Version, directLabel(r.Module), fmtDate(cfg, r.PushedAt)}
 			if cfg.Freshness {
-				latest := r.Module.LatestVersion
-				if latest != "" && latest == r.Module.Version {
-					latest = "-"
-				}
-				behind := formatBehind(r.Module)
-				rows = append(rows, []string{r.Module.Path, r.Module.Version, direct, fmtDate(cfg, r.PushedAt), latest, behind})
-			} else {
-				rows = append(rows, []string{r.Module.Path, r.Module.Version, direct, fmtDate(cfg, r.PushedAt)})
+				row = append(row, latestOrDash(r.Module), formatBehind(r.Module))
 			}
+			rows = append(rows, row)
 		}
 		printMarkdownTable(os.Stdout, headers, rows)
 	}
 
 	// Deprecated modules section
 	if len(deprecatedModules) > 0 && len(deprecatedModules[0]) > 0 {
-		deps := deprecatedModules[0]
-		sort.Slice(deps, func(i, j int) bool {
-			return deps[i].Path < deps[j].Path
-		})
-		_, _ = fmt.Fprintf(os.Stdout, "\n## DEPRECATED MODULES (%d %s)\n\n", len(deps), pluralize(len(deps), "module", "modules"))
-		headers := []string{"Module", "Version", "Direct", "Message"}
-		var rows [][]string
-		for _, m := range deps {
-			direct := "indirect"
-			if m.Direct {
-				direct = "direct"
-			}
-			rows = append(rows, []string{m.Path, m.Version, direct, m.Deprecated})
-		}
-		printMarkdownTable(os.Stdout, headers, rows)
+		printMarkdownDeprecated(deprecatedModules[0])
 	}
 
 	if len(nonGitHubModules) > 0 {
 		PrintMarkdownSkipped(cfg, nonGitHubModules)
 	}
+}
+
+// printMarkdownDeprecated outputs deprecated modules in Markdown format.
+func printMarkdownDeprecated(deps []Module) {
+	sort.Slice(deps, func(i, j int) bool {
+		return deps[i].Path < deps[j].Path
+	})
+	_, _ = fmt.Fprintf(os.Stdout, "\n## DEPRECATED MODULES (%d %s)\n\n", len(deps), pluralize(len(deps), "module", "modules"))
+	headers := []string{"Module", "Version", "Direct", "Message"}
+	var rows [][]string
+	for _, m := range deps {
+		rows = append(rows, []string{m.Path, m.Version, directLabel(m), m.Deprecated})
+	}
+	printMarkdownTable(os.Stdout, headers, rows)
 }
 
 // PrintMarkdownSkipped outputs non-GitHub modules in Markdown format.
@@ -185,28 +133,19 @@ func PrintMarkdownSkipped(cfg *Config, modules []Module) {
 	})
 	_, _ = fmt.Fprintf(os.Stdout, "\n## NON-GITHUB MODULES (%d non-GitHub %s)\n\n",
 		len(modules), pluralize(len(modules), "module", "modules"))
-	var headers []string
+	headers := []string{"Module", "Version", "Latest"}
 	if cfg.Freshness {
-		headers = []string{"Module", "Version", "Latest", "Behind", "Direct", "Published", "Source"}
-	} else {
-		headers = []string{"Module", "Version", "Latest", "Direct", "Published", "Source"}
+		headers = append(headers, "Behind")
 	}
+	headers = append(headers, "Direct", "Published", "Source")
 	var rows [][]string
 	for _, m := range modules {
-		direct := "indirect"
-		if m.Direct {
-			direct = "direct"
-		}
-		latest := m.LatestVersion
-		if latest != "" && latest == m.Version {
-			latest = "-"
-		}
+		row := []string{m.Path, m.Version, latestOrDash(m)}
 		if cfg.Freshness {
-			behind := formatBehind(m)
-			rows = append(rows, []string{m.Path, m.Version, latest, behind, direct, fmtDate(cfg, m.VersionTime), m.SourceURL})
-		} else {
-			rows = append(rows, []string{m.Path, m.Version, latest, direct, fmtDate(cfg, m.VersionTime), m.SourceURL})
+			row = append(row, formatBehind(m))
 		}
+		row = append(row, directLabel(m), fmtDate(cfg, m.VersionTime), m.SourceURL)
+		rows = append(rows, row)
 	}
 	printMarkdownTable(os.Stdout, headers, rows)
 }
@@ -246,37 +185,10 @@ func PrintMarkdownStale(cfg *Config, stale []RepoStatus) {
 	})
 	_, _ = fmt.Fprintf(os.Stdout, "\n## STALE DEPENDENCIES (%d %s not pushed in >%s)\n\n",
 		len(stale), pluralize(len(stale), "module", "modules"), formatThreshold(cfg))
-
-	var headers []string
-	if cfg.Duration.Enabled && cfg.Freshness {
-		headers = []string{"Module", "Version", "Direct", "Last Pushed", "Inactive", "Latest", "Behind"}
-	} else if cfg.Duration.Enabled {
-		headers = []string{"Module", "Version", "Direct", "Last Pushed", "Inactive"}
-	} else if cfg.Freshness {
-		headers = []string{"Module", "Version", "Direct", "Last Pushed", "Latest", "Behind"}
-	} else {
-		headers = []string{"Module", "Version", "Direct", "Last Pushed"}
-	}
+	headers := staleHeaders(cfg)
 	var rows [][]string
 	for _, r := range stale {
-		direct := "indirect"
-		if r.Module.Direct {
-			direct = "direct"
-		}
-		latest := r.Module.LatestVersion
-		if latest != "" && latest == r.Module.Version {
-			latest = "-"
-		}
-		behind := formatBehind(r.Module)
-		if cfg.Duration.Enabled && cfg.Freshness {
-			rows = append(rows, []string{r.Module.Path, r.Module.Version, direct, fmtDate(cfg, r.PushedAt), formatDurationShort(cfg, r.PushedAt), latest, behind})
-		} else if cfg.Duration.Enabled {
-			rows = append(rows, []string{r.Module.Path, r.Module.Version, direct, fmtDate(cfg, r.PushedAt), formatDurationShort(cfg, r.PushedAt)})
-		} else if cfg.Freshness {
-			rows = append(rows, []string{r.Module.Path, r.Module.Version, direct, fmtDate(cfg, r.PushedAt), latest, behind})
-		} else {
-			rows = append(rows, []string{r.Module.Path, r.Module.Version, direct, fmtDate(cfg, r.PushedAt)})
-		}
+		rows = append(rows, staleRow(cfg, r))
 	}
 	printMarkdownTable(os.Stdout, headers, rows)
 }

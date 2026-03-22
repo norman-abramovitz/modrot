@@ -71,6 +71,86 @@ func formatDurationShort(cfg *Config, archivedAt time.Time) string {
 	return strings.Join(parts, "")
 }
 
+// directLabel returns "direct" or "indirect" for a module.
+func directLabel(m Module) string {
+	if m.Direct {
+		return "direct"
+	}
+	return "indirect"
+}
+
+// latestOrDash returns the latest version, or "-" if it matches the current version.
+func latestOrDash(m Module) string {
+	if m.LatestVersion != "" && m.LatestVersion == m.Version {
+		return "-"
+	}
+	return m.LatestVersion
+}
+
+// archivedHeaders returns column headers for archived tables based on cfg flags.
+func archivedHeaders(cfg *Config) []string {
+	h := []string{"Module", "Version", "Direct", "Archived At"}
+	if cfg.Duration.Enabled {
+		h = append(h, "Duration")
+	}
+	h = append(h, "Last Pushed")
+	if cfg.Freshness {
+		h = append(h, "Latest", "Behind")
+	}
+	return h
+}
+
+// archivedRow returns column values for one archived result.
+func archivedRow(cfg *Config, r RepoStatus) []string {
+	row := []string{r.Module.Path, r.Module.Version, directLabel(r.Module), fmtDate(cfg, r.ArchivedAt)}
+	if cfg.Duration.Enabled {
+		row = append(row, formatDuration(cfg, r.ArchivedAt))
+	}
+	row = append(row, fmtDate(cfg, r.PushedAt))
+	if cfg.Freshness {
+		row = append(row, latestOrDash(r.Module), formatBehind(r.Module))
+	}
+	return row
+}
+
+// staleHeaders returns column headers for stale tables based on cfg flags.
+func staleHeaders(cfg *Config) []string {
+	h := []string{"Module", "Version", "Direct", "Last Pushed"}
+	if cfg.Duration.Enabled {
+		h = append(h, "Inactive")
+	}
+	if cfg.Freshness {
+		h = append(h, "Latest", "Behind")
+	}
+	return h
+}
+
+// staleRow returns column values for one stale result.
+func staleRow(cfg *Config, r RepoStatus) []string {
+	row := []string{r.Module.Path, r.Module.Version, directLabel(r.Module), fmtDate(cfg, r.PushedAt)}
+	if cfg.Duration.Enabled {
+		row = append(row, formatDurationShort(cfg, r.PushedAt))
+	}
+	if cfg.Freshness {
+		row = append(row, latestOrDash(r.Module), formatBehind(r.Module))
+	}
+	return row
+}
+
+// writeTabRow writes a tab-separated row to a tabwriter.
+func writeTabRow(w *tabwriter.Writer, cols []string) {
+	_, _ = fmt.Fprintln(w, strings.Join(cols, "\t"))
+}
+
+// toUpper converts a slice of strings to uppercase (for table headers).
+func toUpper(s []string) []string {
+	out := make([]string, len(s))
+	for i, v := range s {
+		out[i] = strings.ToUpper(v)
+	}
+	return out
+}
+
 // hostDomain extracts the hosting domain from a module path.
 func hostDomain(modulePath string) string {
 	parts := strings.SplitN(modulePath, "/", 2)
@@ -171,42 +251,12 @@ func PrintStaleTable(cfg *Config, stale []RepoStatus) {
 	_, _ = fmt.Fprintf(os.Stderr, "\nSTALE DEPENDENCIES (%d %s not pushed in >%s)\n\n",
 		len(stale), pluralize(len(stale), "module", "modules"), formatThreshold(cfg))
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	if cfg.Duration.Enabled && cfg.Freshness {
-		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED\tINACTIVE\tLATEST\tBEHIND")
-	} else if cfg.Duration.Enabled {
-		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED\tINACTIVE")
-	} else if cfg.Freshness {
-		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED\tLATEST\tBEHIND")
-	} else {
-		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED")
-	}
+	writeTabRow(w, toUpper(staleHeaders(cfg)))
 	for _, r := range stale {
-		direct := "indirect"
-		if r.Module.Direct {
-			direct = "direct"
-		}
-		pushedAt := colorize(cfg, fmtDate(cfg, r.PushedAt), r.PushedAt)
-		if cfg.Duration.Enabled && cfg.Freshness {
-			dur := formatDurationShort(cfg, r.PushedAt)
-			latest := r.Module.LatestVersion
-			if latest != "" && latest == r.Module.Version {
-				latest = "-"
-			}
-			behind := formatBehind(r.Module)
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt, dur, latest, behind)
-		} else if cfg.Duration.Enabled {
-			dur := formatDurationShort(cfg, r.PushedAt)
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt, dur)
-		} else if cfg.Freshness {
-			latest := r.Module.LatestVersion
-			if latest != "" && latest == r.Module.Version {
-				latest = "-"
-			}
-			behind := formatBehind(r.Module)
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt, latest, behind)
-		} else {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt)
-		}
+		row := staleRow(cfg, r)
+		// Apply color to the Last Pushed column (index 3)
+		row[3] = colorize(cfg, row[3], r.PushedAt)
+		writeTabRow(w, row)
 	}
 	_ = w.Flush()
 }
@@ -438,33 +488,15 @@ func PrintSkippedTable(cfg *Config, modules []Module) {
 // printArchivedRows writes archived module rows to a tabwriter.
 func printArchivedRows(cfg *Config, w *tabwriter.Writer, archived []RepoStatus) {
 	for _, r := range archived {
-		direct := "indirect"
-		if r.Module.Direct {
-			direct = "direct"
+		row := archivedRow(cfg, r)
+		// Apply color to Archived At (index 3) and Last Pushed (after Duration if present)
+		row[3] = colorize(cfg, row[3], r.ArchivedAt)
+		pushedIdx := 4
+		if cfg.Duration.Enabled {
+			pushedIdx = 5
 		}
-		archivedAt := colorize(cfg, fmtDate(cfg, r.ArchivedAt), r.ArchivedAt)
-		pushedAt := colorize(cfg, fmtDate(cfg, r.PushedAt), r.PushedAt)
-		if cfg.Duration.Enabled && cfg.Freshness {
-			dur := formatDuration(cfg, r.ArchivedAt)
-			latest := r.Module.LatestVersion
-			if latest != "" && latest == r.Module.Version {
-				latest = "-"
-			}
-			behind := formatBehind(r.Module)
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, dur, pushedAt, latest, behind)
-		} else if cfg.Duration.Enabled {
-			dur := formatDuration(cfg, r.ArchivedAt)
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, dur, pushedAt)
-		} else if cfg.Freshness {
-			latest := r.Module.LatestVersion
-			if latest != "" && latest == r.Module.Version {
-				latest = "-"
-			}
-			behind := formatBehind(r.Module)
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, pushedAt, latest, behind)
-		} else {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, archivedAt, pushedAt)
-		}
+		row[pushedIdx] = colorize(cfg, row[pushedIdx], r.PushedAt)
+		writeTabRow(w, row)
 	}
 }
 
@@ -501,15 +533,7 @@ func PrintTable(cfg *Config, results []RepoStatus, nonGitHubModules []Module, de
 	if len(archived) > 0 {
 		_, _ = fmt.Fprintf(os.Stderr, "\nARCHIVED DEPENDENCIES (%d of %d github.com modules)\n\n", len(archived), totalChecked)
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		if cfg.Duration.Enabled && cfg.Freshness {
-			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tARCHIVED AT\tDURATION\tLAST PUSHED\tLATEST\tBEHIND")
-		} else if cfg.Duration.Enabled {
-			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tARCHIVED AT\tDURATION\tLAST PUSHED")
-		} else if cfg.Freshness {
-			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tARCHIVED AT\tLAST PUSHED\tLATEST\tBEHIND")
-		} else {
-			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tARCHIVED AT\tLAST PUSHED")
-		}
+		writeTabRow(w, toUpper(archivedHeaders(cfg)))
 
 		// Show grouped output when there are both direct and indirect
 		if len(archivedDirect) > 0 && len(archivedIndirect) > 0 {
@@ -542,48 +566,24 @@ func PrintTable(cfg *Config, results []RepoStatus, nonGitHubModules []Module, de
 			return active[i].Module.Path < active[j].Module.Path
 		})
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		headers := []string{"Module", "Version", "Direct", "Last Pushed"}
 		if cfg.Freshness {
-			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED\tLATEST\tBEHIND")
-		} else {
-			_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tLAST PUSHED")
+			headers = append(headers, "Latest", "Behind")
 		}
+		writeTabRow(w, toUpper(headers))
 		for _, r := range active {
-			direct := "indirect"
-			if r.Module.Direct {
-				direct = "direct"
-			}
-			pushedAt := fmtDate(cfg, r.PushedAt)
+			row := []string{r.Module.Path, r.Module.Version, directLabel(r.Module), fmtDate(cfg, r.PushedAt)}
 			if cfg.Freshness {
-				latest := r.Module.LatestVersion
-				if latest != "" && latest == r.Module.Version {
-					latest = "-"
-				}
-				behind := formatBehind(r.Module)
-				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt, latest, behind)
-			} else {
-				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Module.Path, r.Module.Version, direct, pushedAt)
+				row = append(row, latestOrDash(r.Module), formatBehind(r.Module))
 			}
+			writeTabRow(w, row)
 		}
 		_ = w.Flush()
 	}
 
 	// Deprecated modules section
 	if len(deprecatedModules) > 0 && len(deprecatedModules[0]) > 0 {
-		deps := deprecatedModules[0]
-		sort.Slice(deps, func(i, j int) bool {
-			return deps[i].Path < deps[j].Path
-		})
-		_, _ = fmt.Fprintf(os.Stderr, "\nDEPRECATED MODULES (%d %s)\n\n", len(deps), pluralize(len(deps), "module", "modules"))
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		_, _ = fmt.Fprintln(w, "MODULE\tVERSION\tDIRECT\tMESSAGE")
-		for _, m := range deps {
-			direct := "indirect"
-			if m.Direct {
-				direct = "direct"
-			}
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m.Path, m.Version, direct, m.Deprecated)
-		}
-		_ = w.Flush()
+		PrintDeprecatedTable(deprecatedModules[0])
 	}
 
 	if len(nonGitHubModules) > 0 {
