@@ -104,7 +104,7 @@ func classifyAge(cfg *Config, t time.Time) int {
 	// Check from oldest threshold to newest, return the highest matching level.
 	for i := len(cfg.Color.Thresholds) - 1; i >= 0; i-- {
 		th := cfg.Color.Thresholds[i]
-		if exceedsThreshold(t, th.Y, th.M, th.D) {
+		if exceedsThreshold(t, th.Y, th.M, th.D, cfg.Now) {
 			return i + 1 // levels are 0-based: 0=newest, N=oldest
 		}
 	}

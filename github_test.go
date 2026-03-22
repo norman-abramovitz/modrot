@@ -2,7 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -256,5 +260,167 @@ func TestGQLResponseUnmarshal(t *testing.T) {
 	}
 	if resp.Errors[0].Path[0] != "r1" {
 		t.Errorf("error path = %v", resp.Errors[0].Path)
+	}
+}
+
+// --- httptest-based tests for queryBatch and checkReposWithClient ---
+
+func TestQueryBatch_Archived(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("expected Bearer test-token, got %q", r.Header.Get("Authorization"))
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("expected application/json, got %q", r.Header.Get("Content-Type"))
+		}
+		_, _ = fmt.Fprint(w, `{
+			"data": {
+				"r0": {"isArchived": true, "archivedAt": "2024-07-22T20:44:18Z", "pushedAt": "2021-05-05T17:08:29Z"}
+			}
+		}`)
+	}))
+	defer srv.Close()
+
+	gc := &ghClient{client: srv.Client(), graphqlURL: srv.URL}
+	modules := []Module{{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar"}}
+
+	results, err := gc.queryBatch("test-token", modules)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].IsArchived {
+		t.Error("expected IsArchived=true")
+	}
+	expected := time.Date(2024, 7, 22, 20, 44, 18, 0, time.UTC)
+	if !results[0].ArchivedAt.Equal(expected) {
+		t.Errorf("ArchivedAt = %v, want %v", results[0].ArchivedAt, expected)
+	}
+}
+
+func TestQueryBatch_NonArchived(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, `{
+			"data": {
+				"r0": {"isArchived": false, "pushedAt": "2025-03-01T10:00:00Z"}
+			}
+		}`)
+	}))
+	defer srv.Close()
+
+	gc := &ghClient{client: srv.Client(), graphqlURL: srv.URL}
+	modules := []Module{{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar"}}
+
+	results, err := gc.queryBatch("test-token", modules)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if results[0].IsArchived {
+		t.Error("expected IsArchived=false")
+	}
+}
+
+func TestQueryBatch_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, `{
+			"data": {"r0": null},
+			"errors": [{"message": "Could not resolve to a Repository", "path": ["r0"]}]
+		}`)
+	}))
+	defer srv.Close()
+
+	gc := &ghClient{client: srv.Client(), graphqlURL: srv.URL}
+	modules := []Module{{Path: "github.com/gone/repo", Owner: "gone", Repo: "repo"}}
+
+	results, err := gc.queryBatch("test-token", modules)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !results[0].NotFound {
+		t.Error("expected NotFound=true")
+	}
+	if results[0].Error != "Could not resolve to a Repository" {
+		t.Errorf("Error = %q", results[0].Error)
+	}
+}
+
+func TestQueryBatch_Non200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = fmt.Fprint(w, `{"message": "internal error"}`)
+	}))
+	defer srv.Close()
+
+	gc := &ghClient{client: srv.Client(), graphqlURL: srv.URL}
+	modules := []Module{{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar"}}
+
+	_, err := gc.queryBatch("test-token", modules)
+	if err == nil {
+		t.Fatal("expected error for non-200 response")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error should contain status code 500, got: %v", err)
+	}
+}
+
+func TestQueryBatch_MalformedJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, `{not valid json`)
+	}))
+	defer srv.Close()
+
+	gc := &ghClient{client: srv.Client(), graphqlURL: srv.URL}
+	modules := []Module{{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar"}}
+
+	_, err := gc.queryBatch("test-token", modules)
+	if err == nil {
+		t.Fatal("expected error for malformed JSON")
+	}
+	if !strings.Contains(err.Error(), "parsing response") {
+		t.Errorf("error should mention parsing, got: %v", err)
+	}
+}
+
+func TestCheckReposWithClient_Batching(t *testing.T) {
+	var requestCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requestCount.Add(1)
+		// Return empty data — modules will be NotFound, but that's fine for batching test
+		_, _ = fmt.Fprint(w, `{"data": {}}`)
+	}))
+	defer srv.Close()
+
+	gc := &ghClient{client: srv.Client(), graphqlURL: srv.URL}
+	modules := make([]Module, 5)
+	for i := range modules {
+		modules[i] = Module{
+			Path:  fmt.Sprintf("github.com/test/repo%d", i),
+			Owner: "test",
+			Repo:  fmt.Sprintf("repo%d", i),
+		}
+	}
+
+	results, err := checkReposWithClient(modules, 2, "test-token", gc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 5 {
+		t.Errorf("expected 5 results, got %d", len(results))
+	}
+	if got := requestCount.Load(); got != 3 {
+		t.Errorf("expected 3 batch requests (2+2+1), got %d", got)
+	}
+}
+
+func TestCheckReposWithClient_Empty(t *testing.T) {
+	gc := &ghClient{client: http.DefaultClient, graphqlURL: "http://unused"}
+	results, err := checkReposWithClient(nil, 50, "test-token", gc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if results != nil {
+		t.Errorf("expected nil results for empty input, got %v", results)
 	}
 }

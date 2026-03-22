@@ -26,11 +26,11 @@ func formatBehind(m Module) string {
 // formatAge returns a compact duration string representing the time
 // between the module's version publish date and today (e.g. "3y1m").
 // Returns "" when version time is unavailable.
-func formatAge(m Module) string {
+func formatAge(cfg *Config, m Module) string {
 	if m.VersionTime.IsZero() {
 		return ""
 	}
-	return compactDuration(m.VersionTime, time.Now())
+	return compactDuration(m.VersionTime, cfg.Now)
 }
 
 // exceedsAgeThreshold returns true if the module's version publish date
@@ -43,7 +43,7 @@ func exceedsAgeThreshold(cfg *Config, m Module) bool {
 	if m.VersionTime.IsZero() {
 		return false
 	}
-	return exceedsThreshold(m.VersionTime, cfg.Age.Years, cfg.Age.Months, cfg.Age.Days)
+	return exceedsThreshold(m.VersionTime, cfg.Age.Years, cfg.Age.Months, cfg.Age.Days, cfg.Now)
 }
 
 // formatAgeThreshold formats the threshold as a compact string for display.

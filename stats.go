@@ -65,13 +65,13 @@ func PrintStats(cfg *Config, results []RepoStatus, nonGHModules []Module, stale 
 
 	// Age distribution of archived modules
 	if archived > 0 {
-		printAgeDistribution(results)
+		printAgeDistribution(cfg, results)
 	}
 }
 
 // printAgeDistribution shows a histogram of archived module ages.
-func printAgeDistribution(results []RepoStatus) {
-	now := time.Now()
+func printAgeDistribution(cfg *Config, results []RepoStatus) {
+	now := cfg.Now
 	buckets := []struct {
 		label string
 		max   time.Time // archived before this date falls in bucket

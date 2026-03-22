@@ -235,17 +235,17 @@ func TestEnrichFreshnessShortCircuit(t *testing.T) {
 }
 
 func TestExceedsAgeThreshold(t *testing.T) {
-	now := time.Now()
+	now := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
 
 	// No threshold set → always true
-	cfg := &Config{Age: AgeConfig{Enabled: true}}
+	cfg := &Config{Age: AgeConfig{Enabled: true}, Now: now}
 	m := Module{VersionTime: now.AddDate(0, -1, 0)}
 	if !exceedsAgeThreshold(cfg, m) {
 		t.Error("no threshold should return true")
 	}
 
 	// 18m threshold, version 2 years old → exceeds
-	cfg = &Config{Age: AgeConfig{Enabled: true, Months: 18}}
+	cfg = &Config{Age: AgeConfig{Enabled: true, Months: 18}, Now: now}
 	m = Module{VersionTime: now.AddDate(-2, 0, 0)}
 	if !exceedsAgeThreshold(cfg, m) {
 		t.Error("2y old version should exceed 18m threshold")
@@ -282,15 +282,17 @@ func TestFormatAgeThreshold(t *testing.T) {
 }
 
 func TestFormatAge(t *testing.T) {
-	m := Module{VersionTime: time.Now().AddDate(-2, -3, -5)}
-	got := formatAge(m)
+	now := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
+	cfg := &Config{Now: now}
+	m := Module{VersionTime: now.AddDate(-2, -3, -5)}
+	got := formatAge(cfg, m)
 	if got == "" || got == "-" {
 		t.Errorf("formatAge() should return a duration, got %q", got)
 	}
 
 	// Zero time → empty
 	m = Module{}
-	if got := formatAge(m); got != "" {
+	if got := formatAge(cfg, m); got != "" {
 		t.Errorf("formatAge(zero) = %q, want empty", got)
 	}
 }

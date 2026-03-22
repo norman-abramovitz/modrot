@@ -40,6 +40,9 @@ type Config struct {
 	GoVersion   string
 	GoToolchain string
 	Recursive   bool
+
+	// Time
+	Now time.Time // reference "now" for all time-relative calculations
 }
 
 // DurationConfig controls the --duration feature.
@@ -84,5 +87,6 @@ func NewDefaultConfig() *Config {
 		DateFmt:      "2006-01-02",
 		SortMode:     "name",
 		Workers:      50,
+		Now:          time.Now(),
 	}
 }

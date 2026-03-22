@@ -153,16 +153,17 @@ func TestBuildIgnoreList(t *testing.T) {
 
 func TestIgnoreList_IntegrationWithStaleAndSort(t *testing.T) {
 	// Verify that ignored modules don't appear in stale results either
-	cfg := &Config{Stale: StaleConfig{Enabled: true, Years: 1}, DateFmt: "2006-01-02"}
+	now := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
+	cfg := &Config{Stale: StaleConfig{Enabled: true, Years: 1}, DateFmt: "2006-01-02", Now: now}
 
 	results := []RepoStatus{
 		{
 			Module:   Module{Path: "github.com/ignored/repo", Version: "v1.0.0"},
-			PushedAt: time.Now().AddDate(-3, 0, 0),
+			PushedAt: now.AddDate(-3, 0, 0),
 		},
 		{
 			Module:   Module{Path: "github.com/kept/repo", Version: "v1.0.0"},
-			PushedAt: time.Now().AddDate(-3, 0, 0),
+			PushedAt: now.AddDate(-3, 0, 0),
 		},
 	}
 

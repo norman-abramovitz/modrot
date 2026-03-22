@@ -118,11 +118,11 @@ func parseThreshold(s string) (years, months, days int, err error) {
 
 // exceedsThreshold returns true if the time since pushedAt exceeds the given
 // years, months, days threshold relative to now.
-func exceedsThreshold(pushedAt time.Time, y, m, d int) bool {
+func exceedsThreshold(pushedAt time.Time, y, m, d int, now time.Time) bool {
 	if pushedAt.IsZero() {
 		return false
 	}
-	cutoff := time.Now().AddDate(-y, -m, -d)
+	cutoff := now.AddDate(-y, -m, -d)
 	return pushedAt.Before(cutoff)
 }
 
@@ -137,7 +137,7 @@ func filterStale(cfg *Config, results []RepoStatus) []RepoStatus {
 		if r.IsArchived || r.NotFound {
 			continue
 		}
-		if exceedsThreshold(r.PushedAt, cfg.Stale.Years, cfg.Stale.Months, cfg.Stale.Days) {
+		if exceedsThreshold(r.PushedAt, cfg.Stale.Years, cfg.Stale.Months, cfg.Stale.Days, cfg.Now) {
 			stale = append(stale, r)
 		}
 	}
@@ -254,7 +254,7 @@ func PrintOutdatedTable(cfg *Config, results []RepoStatus, nonGHModules []Module
 			latest = "-"
 		}
 		behind := formatBehind(m)
-		age := formatAge(m)
+		age := formatAge(cfg, m)
 		published := ""
 		if !m.VersionTime.IsZero() {
 			published = fmtDate(cfg, m.VersionTime)

@@ -36,6 +36,20 @@ type graphQLRequest struct {
 	Query string `json:"query"`
 }
 
+// ghClient holds an HTTP client and configurable GraphQL URL for GitHub API queries.
+type ghClient struct {
+	client     *http.Client
+	graphqlURL string
+}
+
+// newGHClient creates a ghClient with production defaults.
+func newGHClient() *ghClient {
+	return &ghClient{
+		client:     http.DefaultClient,
+		graphqlURL: "https://api.github.com/graphql",
+	}
+}
+
 // CheckRepos queries GitHub for the archived status of the given modules.
 // Modules are batched into groups of batchSize per GraphQL request.
 func CheckRepos(modules []Module, batchSize int) ([]RepoStatus, error) {
@@ -48,6 +62,12 @@ func CheckRepos(modules []Module, batchSize int) ([]RepoStatus, error) {
 		return nil, err
 	}
 
+	return checkReposWithClient(modules, batchSize, token, newGHClient())
+}
+
+// checkReposWithClient is the internal implementation that accepts a ghClient,
+// allowing tests to inject mock HTTP servers.
+func checkReposWithClient(modules []Module, batchSize int, token string, gc *ghClient) ([]RepoStatus, error) {
 	var results []RepoStatus
 	for i := 0; i < len(modules); i += batchSize {
 		end := i + batchSize
@@ -56,7 +76,7 @@ func CheckRepos(modules []Module, batchSize int) ([]RepoStatus, error) {
 		}
 		batch := modules[i:end]
 
-		statuses, err := queryBatch(token, batch)
+		statuses, err := gc.queryBatch(token, batch)
 		if err != nil {
 			return nil, fmt.Errorf("querying batch starting at index %d: %w", i, err)
 		}
@@ -124,7 +144,7 @@ func parseGraphQLResponse(gqlResp gqlResponse, modules []Module) []RepoStatus {
 	return results
 }
 
-func queryBatch(token string, modules []Module) ([]RepoStatus, error) {
+func (g *ghClient) queryBatch(token string, modules []Module) ([]RepoStatus, error) {
 	query := buildGraphQLQuery(modules)
 
 	reqBody, err := json.Marshal(graphQLRequest{Query: query})
@@ -132,14 +152,14 @@ func queryBatch(token string, modules []Module) ([]RepoStatus, error) {
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", "https://api.github.com/graphql", bytes.NewReader(reqBody))
+	req, err := http.NewRequest("POST", g.graphqlURL, bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := g.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("GitHub API request failed: %w", err)
 	}

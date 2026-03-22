@@ -1531,26 +1531,28 @@ func TestParseThreshold(t *testing.T) {
 }
 
 func TestExceedsThreshold(t *testing.T) {
-	old := time.Now().AddDate(-3, 0, 0)
-	if !exceedsThreshold(old, 2, 0, 0) {
+	now := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
+	old := now.AddDate(-3, 0, 0)
+	if !exceedsThreshold(old, 2, 0, 0, now) {
 		t.Error("3y old should exceed 2y threshold")
 	}
-	recent := time.Now().AddDate(-1, 0, 0)
-	if exceedsThreshold(recent, 2, 0, 0) {
+	recent := now.AddDate(-1, 0, 0)
+	if exceedsThreshold(recent, 2, 0, 0, now) {
 		t.Error("1y old should not exceed 2y threshold")
 	}
-	if exceedsThreshold(time.Time{}, 2, 0, 0) {
+	if exceedsThreshold(time.Time{}, 2, 0, 0, now) {
 		t.Error("zero time should not exceed threshold")
 	}
 }
 
 func TestFilterStale(t *testing.T) {
-	cfg := &Config{Stale: StaleConfig{Enabled: true, Years: 2}, DateFmt: "2006-01-02"}
+	now := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
+	cfg := &Config{Stale: StaleConfig{Enabled: true, Years: 2}, DateFmt: "2006-01-02", Now: now}
 
 	results := []RepoStatus{
-		{Module: Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"}, IsArchived: false, PushedAt: time.Now().AddDate(-3, 0, 0)},
-		{Module: Module{Path: "github.com/baz/qux", Version: "v2.0.0", Owner: "baz", Repo: "qux"}, IsArchived: false, PushedAt: time.Now().AddDate(0, -6, 0)},
-		{Module: Module{Path: "github.com/old/archived", Version: "v0.1.0", Owner: "old", Repo: "archived"}, IsArchived: true, PushedAt: time.Now().AddDate(-5, 0, 0)},
+		{Module: Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"}, IsArchived: false, PushedAt: now.AddDate(-3, 0, 0)},
+		{Module: Module{Path: "github.com/baz/qux", Version: "v2.0.0", Owner: "baz", Repo: "qux"}, IsArchived: false, PushedAt: now.AddDate(0, -6, 0)},
+		{Module: Module{Path: "github.com/old/archived", Version: "v0.1.0", Owner: "old", Repo: "archived"}, IsArchived: true, PushedAt: now.AddDate(-5, 0, 0)},
 	}
 
 	stale := filterStale(cfg, results)
@@ -1563,10 +1565,11 @@ func TestFilterStale(t *testing.T) {
 }
 
 func TestFilterStale_Disabled(t *testing.T) {
-	cfg := &Config{DateFmt: "2006-01-02"}
+	now := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
+	cfg := &Config{DateFmt: "2006-01-02", Now: now}
 
 	results := []RepoStatus{
-		{Module: Module{Path: "github.com/foo/bar"}, PushedAt: time.Now().AddDate(-5, 0, 0)},
+		{Module: Module{Path: "github.com/foo/bar"}, PushedAt: now.AddDate(-5, 0, 0)},
 	}
 	stale := filterStale(cfg, results)
 	if stale != nil {

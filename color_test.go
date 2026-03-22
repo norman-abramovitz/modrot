@@ -36,7 +36,9 @@ func TestParseColorThreshold(t *testing.T) {
 }
 
 func TestClassifyAge_FourThresholds(t *testing.T) {
+	now := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
 	cfg := &Config{
+		Now: now,
 		Color: ColorConfig{
 			Enabled: true,
 			Thresholds: []ColorThreshold{
@@ -47,8 +49,6 @@ func TestClassifyAge_FourThresholds(t *testing.T) {
 			},
 		},
 	}
-
-	now := time.Now()
 
 	tests := []struct {
 		name string
@@ -74,7 +74,9 @@ func TestClassifyAge_FourThresholds(t *testing.T) {
 }
 
 func TestClassifyAge_TwoThresholds(t *testing.T) {
+	now := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
 	cfg := &Config{
+		Now: now,
 		Color: ColorConfig{
 			Enabled: true,
 			Thresholds: []ColorThreshold{
@@ -83,8 +85,6 @@ func TestClassifyAge_TwoThresholds(t *testing.T) {
 			},
 		},
 	}
-
-	now := time.Now()
 
 	tests := []struct {
 		name string
@@ -107,7 +107,9 @@ func TestClassifyAge_TwoThresholds(t *testing.T) {
 }
 
 func TestClassifyAge_ThreeThresholds(t *testing.T) {
+	now := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
 	cfg := &Config{
+		Now: now,
 		Color: ColorConfig{
 			Enabled: true,
 			Thresholds: []ColorThreshold{
@@ -117,8 +119,6 @@ func TestClassifyAge_ThreeThresholds(t *testing.T) {
 			},
 		},
 	}
-
-	now := time.Now()
 
 	tests := []struct {
 		name string
@@ -195,7 +195,9 @@ func TestColorize_Disabled(t *testing.T) {
 }
 
 func TestColorize_Enabled(t *testing.T) {
+	now := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
 	cfg := &Config{
+		Now: now,
 		Color: ColorConfig{
 			Enabled: true,
 			Thresholds: []ColorThreshold{
@@ -206,8 +208,6 @@ func TestColorize_Enabled(t *testing.T) {
 			},
 		},
 	}
-
-	now := time.Now()
 
 	// Recent — should be decorated
 	recent := now.AddDate(0, -1, 0)
