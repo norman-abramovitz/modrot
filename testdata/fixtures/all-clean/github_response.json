@@ -1,0 +1,26 @@
+[
+  {
+    "Module": {"Path": "github.com/stretchr/testify", "Version": "v1.9.0", "Direct": true, "Owner": "stretchr", "Repo": "testify"},
+    "IsArchived": false,
+    "ArchivedAt": "0001-01-01T00:00:00Z",
+    "PushedAt": "2025-02-15T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  },
+  {
+    "Module": {"Path": "github.com/spf13/cobra", "Version": "v1.8.0", "Direct": true, "Owner": "spf13", "Repo": "cobra"},
+    "IsArchived": false,
+    "ArchivedAt": "0001-01-01T00:00:00Z",
+    "PushedAt": "2025-01-10T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  },
+  {
+    "Module": {"Path": "github.com/spf13/pflag", "Version": "v1.0.5", "Direct": true, "Owner": "spf13", "Repo": "pflag"},
+    "IsArchived": false,
+    "ArchivedAt": "0001-01-01T00:00:00Z",
+    "PushedAt": "2024-08-20T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  }
+]

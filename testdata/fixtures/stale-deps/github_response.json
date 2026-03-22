@@ -1,0 +1,26 @@
+[
+  {
+    "Module": {"Path": "github.com/stretchr/testify", "Version": "v1.9.0", "Direct": true, "Owner": "stretchr", "Repo": "testify"},
+    "IsArchived": false,
+    "ArchivedAt": "0001-01-01T00:00:00Z",
+    "PushedAt": "2025-02-15T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  },
+  {
+    "Module": {"Path": "github.com/old/library", "Version": "v1.0.0", "Direct": true, "Owner": "old", "Repo": "library"},
+    "IsArchived": false,
+    "ArchivedAt": "0001-01-01T00:00:00Z",
+    "PushedAt": "2022-06-15T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  },
+  {
+    "Module": {"Path": "github.com/ancient/tool", "Version": "v0.5.0", "Direct": true, "Owner": "ancient", "Repo": "tool"},
+    "IsArchived": false,
+    "ArchivedAt": "0001-01-01T00:00:00Z",
+    "PushedAt": "2020-01-10T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  }
+]

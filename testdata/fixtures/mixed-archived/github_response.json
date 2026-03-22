@@ -1,0 +1,50 @@
+[
+  {
+    "Module": {"Path": "github.com/pkg/errors", "Version": "v0.9.1", "Direct": true, "Owner": "pkg", "Repo": "errors"},
+    "IsArchived": true,
+    "ArchivedAt": "2021-12-01T00:00:00Z",
+    "PushedAt": "2021-11-02T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  },
+  {
+    "Module": {"Path": "github.com/mitchellh/mapstructure", "Version": "v1.5.0", "Direct": true, "Owner": "mitchellh", "Repo": "mapstructure"},
+    "IsArchived": true,
+    "ArchivedAt": "2024-07-22T00:00:00Z",
+    "PushedAt": "2024-06-25T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  },
+  {
+    "Module": {"Path": "github.com/stretchr/testify", "Version": "v1.9.0", "Direct": true, "Owner": "stretchr", "Repo": "testify"},
+    "IsArchived": false,
+    "ArchivedAt": "0001-01-01T00:00:00Z",
+    "PushedAt": "2025-02-15T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  },
+  {
+    "Module": {"Path": "github.com/spf13/cobra", "Version": "v1.8.0", "Direct": true, "Owner": "spf13", "Repo": "cobra"},
+    "IsArchived": false,
+    "ArchivedAt": "0001-01-01T00:00:00Z",
+    "PushedAt": "2025-01-10T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  },
+  {
+    "Module": {"Path": "github.com/davecgh/go-spew", "Version": "v1.1.1", "Direct": false, "Owner": "davecgh", "Repo": "go-spew"},
+    "IsArchived": false,
+    "ArchivedAt": "0001-01-01T00:00:00Z",
+    "PushedAt": "2024-03-01T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  },
+  {
+    "Module": {"Path": "github.com/inconshreveable/mousetrap", "Version": "v1.1.0", "Direct": false, "Owner": "inconshreveable", "Repo": "mousetrap"},
+    "IsArchived": false,
+    "ArchivedAt": "0001-01-01T00:00:00Z",
+    "PushedAt": "0001-01-01T00:00:00Z",
+    "NotFound": true,
+    "Error": "Could not resolve to a Repository"
+  }
+]

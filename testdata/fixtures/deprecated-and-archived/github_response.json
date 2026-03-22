@@ -1,0 +1,26 @@
+[
+  {
+    "Module": {"Path": "github.com/pkg/errors", "Version": "v0.9.1", "Direct": true, "Owner": "pkg", "Repo": "errors", "Deprecated": ""},
+    "IsArchived": true,
+    "ArchivedAt": "2021-12-01T00:00:00Z",
+    "PushedAt": "2021-11-02T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  },
+  {
+    "Module": {"Path": "github.com/golang/protobuf", "Version": "v1.5.4", "Direct": true, "Owner": "golang", "Repo": "protobuf", "Deprecated": "Use the \"google.golang.org/protobuf\" module instead."},
+    "IsArchived": false,
+    "ArchivedAt": "0001-01-01T00:00:00Z",
+    "PushedAt": "2024-03-26T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  },
+  {
+    "Module": {"Path": "github.com/stretchr/testify", "Version": "v1.9.0", "Direct": true, "Owner": "stretchr", "Repo": "testify", "Deprecated": ""},
+    "IsArchived": false,
+    "ArchivedAt": "0001-01-01T00:00:00Z",
+    "PushedAt": "2025-02-15T00:00:00Z",
+    "NotFound": false,
+    "Error": ""
+  }
+]
