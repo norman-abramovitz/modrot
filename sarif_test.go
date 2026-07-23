@@ -219,6 +219,65 @@ func TestBuildSARIF_MultipleGoMods(t *testing.T) {
 	}
 }
 
+// TestBuildSARIF_RequireLineRegions is the issue #18 acceptance fixture: a
+// module required from two go.mod files at different require lines produces one
+// result with two locations, each anchored to its own require line via
+// region.startLine.
+func TestBuildSARIF_RequireLineRegions(t *testing.T) {
+	inputs := []SARIFInput{
+		{
+			GomodURI: "svc-a/go.mod",
+			Results: []RepoStatus{{
+				Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar", Line: 7},
+				IsArchived: true,
+			}},
+		},
+		{
+			GomodURI: "svc-b/go.mod",
+			Results: []RepoStatus{{
+				Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar", Line: 12},
+				IsArchived: true,
+			}},
+		},
+	}
+
+	run := buildSARIF(inputs).Runs[0]
+	if len(run.Results) != 1 {
+		t.Fatalf("results = %d, want 1", len(run.Results))
+	}
+	r := run.Results[0]
+	if len(r.Locations) != 2 {
+		t.Fatalf("locations = %d, want 2", len(r.Locations))
+	}
+	byURI := map[string]int{}
+	for _, loc := range r.Locations {
+		byURI[loc.PhysicalLocation.ArtifactLocation.URI] = loc.PhysicalLocation.Region.StartLine
+	}
+	if byURI["svc-a/go.mod"] != 7 {
+		t.Errorf("svc-a startLine = %d, want 7", byURI["svc-a/go.mod"])
+	}
+	if byURI["svc-b/go.mod"] != 12 {
+		t.Errorf("svc-b startLine = %d, want 12", byURI["svc-b/go.mod"])
+	}
+}
+
+// TestBuildSARIF_NoRegionWhenLineUnknown pins that a zero require line omits the
+// region entirely (no bogus startLine 0) so file-level anchoring still works.
+func TestBuildSARIF_NoRegionWhenLineUnknown(t *testing.T) {
+	inputs := []SARIFInput{{
+		GomodURI: "go.mod",
+		Results: []RepoStatus{{
+			Module:     Module{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar"},
+			IsArchived: true,
+		}},
+	}}
+
+	r := buildSARIF(inputs).Runs[0].Results[0]
+	if r.Locations[0].PhysicalLocation.Region != nil {
+		t.Errorf("region = %+v, want nil when line unknown", r.Locations[0].PhysicalLocation.Region)
+	}
+}
+
 func TestBuildSARIF_MultipleGoMods_SameVersion(t *testing.T) {
 	inputs := []SARIFInput{
 		{

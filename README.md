@@ -413,7 +413,7 @@ $ modrot --sarif --deprecated > modrot.sarif
     sarif_file: modrot.sarif
 ```
 
-The `|| true` keeps the workflow running when modrot exits 1 on archived findings, so the upload step still runs. Each archived dependency is reported as a `warning` and each deprecated dependency as a `note`, anchored to the scanned `go.mod` file (with `--recursive`, to each go.mod in the tree). SARIF paths are always relative to the current working directory, so run modrot from the repository root — e.g. `modrot --recursive --sarif . > modrot.sarif` — so the paths are repo-relative. Stale, age, and stats sections are not part of SARIF output.
+The `|| true` keeps the workflow running when modrot exits 1 on archived findings, so the upload step still runs. Each archived dependency is reported as a `warning` and each deprecated dependency as a `note`, anchored to the exact `require` line in the scanned `go.mod` file (with `--recursive`, to each go.mod in the tree — a module required from several go.mod files becomes one result with a location per require site). SARIF paths are always relative to the current working directory, so run modrot from the repository root — e.g. `modrot --recursive --sarif . > modrot.sarif` — so the paths are repo-relative. Stale, age, and stats sections are not part of SARIF output.
 
 **Sorting** — sort archived dependencies by field and direction. Append `:asc` or `:desc` to control order. Each field has a natural default:
 
