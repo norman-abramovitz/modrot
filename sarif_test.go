@@ -249,3 +249,46 @@ func TestBuildSARIF_MultipleGoMods_SameVersion(t *testing.T) {
 		t.Errorf("message should keep version when all occurrences agree, got %q", r.Message.Text)
 	}
 }
+
+func TestDeprecatedMessage_EmptyVersion(t *testing.T) {
+	got := deprecatedMessage(Module{Path: "github.com/old/lib", Deprecated: "use new/lib"})
+	want := "github.com/old/lib is deprecated: use new/lib"
+	if got != want {
+		t.Errorf("message = %q, want %q", got, want)
+	}
+}
+
+func TestDeprecatedMessage_EmptyDeprecationText(t *testing.T) {
+	got := deprecatedMessage(Module{Path: "github.com/old/lib", Version: "v1.0.0"})
+	want := "github.com/old/lib@v1.0.0 is deprecated"
+	if got != want {
+		t.Errorf("message = %q, want %q", got, want)
+	}
+}
+
+// TestBuildSARIF_ArchivedAndDeprecated pins that a module which is both
+// archived and deprecated in the same input produces TWO results — one per
+// rule — so a future dedup change doesn't accidentally merge across rules.
+func TestBuildSARIF_ArchivedAndDeprecated(t *testing.T) {
+	inputs := []SARIFInput{{
+		GomodURI: "go.mod",
+		Results: []RepoStatus{{
+			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
+			IsArchived: true,
+		}},
+		Deprecated: []Module{
+			{Path: "github.com/foo/bar", Version: "v1.0.0", Deprecated: "use something else"},
+		},
+	}}
+
+	run := buildSARIF(inputs).Runs[0]
+	if len(run.Results) != 2 {
+		t.Fatalf("results = %d, want 2 (one archived, one deprecated)", len(run.Results))
+	}
+	if run.Results[0].RuleID != ruleArchived {
+		t.Errorf("results[0].RuleID = %q, want %q", run.Results[0].RuleID, ruleArchived)
+	}
+	if run.Results[1].RuleID != ruleDeprecated {
+		t.Errorf("results[1].RuleID = %q, want %q", run.Results[1].RuleID, ruleDeprecated)
+	}
+}
