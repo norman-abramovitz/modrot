@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -148,6 +149,32 @@ func TestPrintSARIF_ValidDocument(t *testing.T) {
 	runs := doc["runs"].([]any)
 	if len(runs) != 1 {
 		t.Fatalf("runs = %d", len(runs))
+	}
+}
+
+func TestPrintSARIF_EmptyInput(t *testing.T) {
+	output := captureStdout(t, func() {
+		PrintSARIF([]SARIFInput{{GomodURI: "go.mod"}})
+	})
+
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(output), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v\noutput: %s", err, output)
+	}
+	runs := doc["runs"].([]any)
+	if len(runs) != 1 {
+		t.Fatalf("runs = %d, want 1", len(runs))
+	}
+	run := runs[0].(map[string]any)
+	results, ok := run["results"].([]any)
+	if !ok {
+		t.Fatalf("results field missing or not an array: %+v", run["results"])
+	}
+	if len(results) != 0 {
+		t.Errorf("results = %d, want 0", len(results))
+	}
+	if !strings.Contains(output, `"results": []`) {
+		t.Errorf("output does not contain literal %q\noutput: %s", `"results": []`, output)
 	}
 }
 

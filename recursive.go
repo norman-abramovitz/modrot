@@ -171,6 +171,21 @@ func runRecursive(rootDir string, cfg *Config) int {
 
 	if len(allGitHub) == 0 {
 		_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found across %d go.mod files.\n", len(modules))
+		if cfg.OutputFormat == "sarif" {
+			cwd, _ := os.Getwd()
+			inputs := make([]SARIFInput, 0, len(modules))
+			for _, mi := range modules {
+				uri := mi.gomodPath
+				if rel, relErr := filepath.Rel(cwd, mi.gomodPath); relErr == nil {
+					uri = rel
+				}
+				inputs = append(inputs, SARIFInput{
+					GomodURI:   filepath.ToSlash(uri),
+					Deprecated: getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated),
+				})
+			}
+			PrintSARIF(inputs)
+		}
 		return 0
 	}
 

@@ -313,6 +313,12 @@ func runSingleModule(cfg *Config, inputPath string) int {
 
 	if len(githubModules) == 0 {
 		_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found in %s\n", gomodPath)
+		if cfg.OutputFormat == "sarif" {
+			PrintSARIF([]SARIFInput{{
+				GomodURI:   filepath.ToSlash(relPath),
+				Deprecated: collectDeprecated(cfg, allModules),
+			}})
+		}
 		return 0
 	}
 
