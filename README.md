@@ -47,11 +47,12 @@ If no path is given, looks for `go.mod` in the current directory. You can also p
 
 | Flag | Description |
 |------|-------------|
-| `--format FORMAT` | Output format: `table` (default), `json`, `markdown`, `mermaid`, `quickfix` |
+| `--format FORMAT` | Output format: `table` (default), `json`, `markdown`, `mermaid`, `quickfix`, `sarif` |
 | `--json` | Output as JSON (alias for `--format=json`) |
 | `--markdown` | Output as GitHub-Flavored Markdown (alias for `--format=markdown`) |
 | `--mermaid` | Output Mermaid flowchart diagram (alias for `--format=mermaid`) |
 | `--quickfix` | Output `file:line:module` for editor quickfix (alias for `--format=quickfix`) |
+| `--sarif` | Output SARIF 2.1.0 for GitHub code scanning (alias for `--format=sarif`) |
 
 **Filtering:**
 
@@ -395,6 +396,22 @@ $ modrot --markdown
 
 Combines with `--tree`, `--files`, `--stale`, and `--all`.
 
+**SARIF** — upload findings to GitHub code scanning so archived and
+deprecated dependencies appear in the repository's Security tab:
+
+```
+$ modrot --sarif --deprecated > modrot.sarif
+```
+
+```yaml
+- run: modrot --sarif --deprecated > modrot.sarif || true
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: modrot.sarif
+```
+
+The `|| true` keeps the workflow running when modrot exits 1 on archived findings, so the upload step still runs. Each archived dependency is reported as a `warning` and each deprecated dependency as a `note`, anchored to the scanned `go.mod` file (with `--recursive`, to each go.mod in the tree). Run modrot from the repository root so the paths are repo-relative. Stale, age, and stats sections are not part of SARIF output.
+
 **Sorting** — sort archived dependencies by field and direction. Append `:asc` or `:desc` to control order. Each field has a natural default:
 
 | Value | Result | Default? |
@@ -435,7 +452,7 @@ $ modrot --no-color                      # Disable colors entirely
 $ NO_COLOR=1 modrot                      # Also disables colors
 ```
 
-Colors apply to archived and stale table output only (not JSON, markdown, mermaid, or quickfix).
+Colors apply to archived and stale table output only (not JSON, markdown, mermaid, quickfix, or SARIF).
 
 ### Filtering and ignoring
 
