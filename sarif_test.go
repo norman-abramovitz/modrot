@@ -89,3 +89,34 @@ func TestBuildSARIF_ArchivedNoDates(t *testing.T) {
 		t.Errorf("message = %q", r.Message.Text)
 	}
 }
+
+func TestBuildSARIF_Deprecated(t *testing.T) {
+	inputs := []SARIFInput{{
+		GomodURI: "go.mod",
+		Deprecated: []Module{
+			{Path: "github.com/old/lib", Version: "v1.2.0", Deprecated: "use github.com/new/lib instead"},
+		},
+	}}
+
+	run := buildSARIF(inputs).Runs[0]
+	if len(run.Results) != 1 {
+		t.Fatalf("results = %d, want 1", len(run.Results))
+	}
+	r := run.Results[0]
+	if r.RuleID != "deprecated-dependency" {
+		t.Errorf("ruleId = %q", r.RuleID)
+	}
+	if r.Level != "note" {
+		t.Errorf("level = %q, want note", r.Level)
+	}
+	want := "github.com/old/lib@v1.2.0 is deprecated: use github.com/new/lib instead"
+	if r.Message.Text != want {
+		t.Errorf("message = %q, want %q", r.Message.Text, want)
+	}
+	if r.Locations[0].PhysicalLocation.ArtifactLocation.URI != "go.mod" {
+		t.Errorf("uri = %q", r.Locations[0].PhysicalLocation.ArtifactLocation.URI)
+	}
+	if r.PartialFingerprints["modrotFinding/v1"] != "github.com/old/lib:deprecated" {
+		t.Errorf("fingerprint = %q", r.PartialFingerprints["modrotFinding/v1"])
+	}
+}
