@@ -52,11 +52,12 @@ func parseFlags() *Config {
 	reorderArgs()
 
 	// Output format flags
-	formatFlag := flag.String("format", "table", "Output format: table, json, markdown, mermaid, quickfix")
+	formatFlag := flag.String("format", "table", "Output format: table, json, markdown, mermaid, quickfix, sarif")
 	jsonFlag := flag.Bool("json", false, "Output as JSON (alias for --format=json)")
 	markdownFlag := flag.Bool("markdown", false, "Output as GitHub-flavored Markdown (alias for --format=markdown)")
 	mermaidFlag := flag.Bool("mermaid", false, "Output Mermaid flowchart diagram (alias for --format=mermaid)")
 	quickfixFlag := flag.Bool("quickfix", false, "Output file:line:module for editor quickfix (alias for --format=quickfix)")
+	sarifFlag := flag.Bool("sarif", false, "Output SARIF 2.1.0 for GitHub code scanning (alias for --format=sarif)")
 
 	// Filtering flags
 	directOnly := flag.Bool("direct-only", false, "Only check direct dependencies")
@@ -98,11 +99,12 @@ dependencies as a table. Exits 1 if any are found (useful for CI).
 Flags can appear before or after the path argument.
 
 Output format:
-  --format string       Output format: table, json, markdown, mermaid, quickfix (default "table")
+  --format string       Output format: table, json, markdown, mermaid, quickfix, sarif (default "table")
   --json                Output as JSON (alias for --format=json)
   --markdown            Output as GitHub-flavored Markdown (alias for --format=markdown)
   --mermaid             Output Mermaid flowchart diagram (alias for --format=mermaid)
   --quickfix            Output file:line:module for editor quickfix (alias for --format=quickfix)
+  --sarif               Output SARIF 2.1.0 for GitHub code scanning (alias for --format=sarif)
 
 Filtering:
   --direct-only         Only check direct dependencies (useful for CI)
@@ -154,6 +156,7 @@ Examples:
   modrot --markdown --all --deprecated       Markdown for release notes
   modrot --json | jq '.archived[].module'    Scripting with JSON output
   modrot --recursive /path/to/monorepo       Scan all go.mod files in a tree
+  modrot --sarif --deprecated > modrot.sarif     SARIF for GitHub code scanning
 `)
 	}
 	flag.Parse()
@@ -186,6 +189,8 @@ Examples:
 		cfg.OutputFormat = "mermaid"
 	case *quickfixFlag:
 		cfg.OutputFormat = "quickfix"
+	case *sarifFlag:
+		cfg.OutputFormat = "sarif"
 	}
 
 	// Auto-enable rules
@@ -194,6 +199,11 @@ Examples:
 	}
 	if cfg.OutputFormat == "mermaid" {
 		*treeFlag = true
+	}
+	if cfg.OutputFormat == "sarif" {
+		// SARIF is a flat findings document; tree mode would route output
+		// to formats that cannot carry it.
+		*treeFlag = false
 	}
 
 	cfg.DirectOnly = *directOnly
@@ -350,7 +360,7 @@ func runSingleModule(cfg *Config, inputPath string) int {
 	}
 
 	// Output
-	outputFlat(cfg, results, nonGitHubModules, fileMatches, deprecatedModules, stale, ignoredResults, ignoreList)
+	outputFlat(cfg, filepath.ToSlash(relPath), results, nonGitHubModules, fileMatches, deprecatedModules, stale, ignoredResults, ignoreList)
 
 	return exitCode(hasArchived)
 }
@@ -454,7 +464,7 @@ func outputTree(cfg *Config, results []RepoStatus, graph map[string][]string, al
 }
 
 // outputFlat dispatches non-tree output to the appropriate format.
-func outputFlat(cfg *Config, results []RepoStatus, nonGitHubModules []Module,
+func outputFlat(cfg *Config, gomodRel string, results []RepoStatus, nonGitHubModules []Module,
 	fileMatches map[string][]FileMatch, deprecatedModules []Module,
 	stale []RepoStatus, ignoredResults []RepoStatus, ignoreList *IgnoreList) {
 
@@ -463,6 +473,9 @@ func outputFlat(cfg *Config, results []RepoStatus, nonGitHubModules []Module,
 		if fileMatches != nil {
 			PrintFilesPlain(results, fileMatches)
 		}
+	case "sarif":
+		PrintSARIF([]SARIFInput{{GomodURI: gomodRel, Results: results, Deprecated: deprecatedModules}})
+		return
 	case "json":
 		PrintJSON(cfg, results, nonGitHubModules, fileMatches, stale, deprecatedModules)
 	case "markdown":

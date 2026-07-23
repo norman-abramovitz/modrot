@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -118,5 +119,34 @@ func TestBuildSARIF_Deprecated(t *testing.T) {
 	}
 	if r.PartialFingerprints["modrotFinding/v1"] != "github.com/old/lib:deprecated" {
 		t.Errorf("fingerprint = %q", r.PartialFingerprints["modrotFinding/v1"])
+	}
+}
+
+func TestPrintSARIF_ValidDocument(t *testing.T) {
+	inputs := []SARIFInput{{
+		GomodURI: "go.mod",
+		Results: []RepoStatus{{
+			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
+			IsArchived: true,
+		}},
+	}}
+
+	output := captureStdout(t, func() {
+		PrintSARIF(inputs)
+	})
+
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(output), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v\noutput: %s", err, output)
+	}
+	if doc["version"] != "2.1.0" {
+		t.Errorf("version = %v", doc["version"])
+	}
+	if doc["$schema"] != sarifSchemaURI {
+		t.Errorf("$schema = %v", doc["$schema"])
+	}
+	runs := doc["runs"].([]any)
+	if len(runs) != 1 {
+		t.Fatalf("runs = %d", len(runs))
 	}
 }

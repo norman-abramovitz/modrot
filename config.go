@@ -6,7 +6,7 @@ import "time"
 // Created once after flag parsing; passed by pointer to all functions.
 type Config struct {
 	// Output
-	OutputFormat string // "table", "json", "markdown", "mermaid", "quickfix"
+	OutputFormat string // "table", "json", "markdown", "mermaid", "quickfix", "sarif"
 	DateFmt      string // "2006-01-02" or "2006-01-02 15:04:05"
 
 	// Filtering
