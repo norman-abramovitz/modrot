@@ -142,6 +142,22 @@ func archivedMessage(rs RepoStatus) string {
 	return b.String()
 }
 
+// deprecatedMessage builds the human-readable message for a deprecated finding.
+func deprecatedMessage(m Module) string {
+	var b strings.Builder
+	b.WriteString(m.Path)
+	if m.Version != "" {
+		b.WriteString("@")
+		b.WriteString(m.Version)
+	}
+	b.WriteString(" is deprecated")
+	if m.Deprecated != "" {
+		b.WriteString(": ")
+		b.WriteString(m.Deprecated)
+	}
+	return b.String()
+}
+
 // buildSARIF assembles one SARIF run from per-go.mod inputs. Results is
 // always non-nil so it serializes as [] rather than null.
 func buildSARIF(inputs []SARIFInput) sarifLog {
@@ -159,6 +175,17 @@ func buildSARIF(inputs []SARIFInput) sarifLog {
 				Locations: loc,
 				PartialFingerprints: map[string]string{
 					"modrotFinding/v1": rs.Module.Path + ":archived",
+				},
+			})
+		}
+		for _, m := range in.Deprecated {
+			results = append(results, sarifResult{
+				RuleID:    ruleDeprecated,
+				Level:     "note",
+				Message:   sarifText{Text: deprecatedMessage(m)},
+				Locations: loc,
+				PartialFingerprints: map[string]string{
+					"modrotFinding/v1": m.Path + ":deprecated",
 				},
 			})
 		}
