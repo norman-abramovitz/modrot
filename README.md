@@ -11,8 +11,11 @@ Archived dependencies no longer receive security patches, bug fixes, or compatib
 ### Homebrew
 
 ```bash
+brew trust norman-abramovitz/tap
 brew install norman-abramovitz/tap/modrot
 ```
+
+Homebrew 6.0+ requires third-party taps to be trusted before their code runs, so `brew trust` must come first. On older Homebrew the `brew trust` line is unnecessary (and unrecognized) — skip it and run `brew install` directly.
 
 ### Go
 
