@@ -350,12 +350,14 @@ modrot --json | jq -r '.archived[].module'
 modrot --json | jq '[.archived[] | select(.direct)] | length'
 ```
 
-**Editor quickfix** — navigate directly to files importing archived modules:
+**Editor quickfix** — navigate directly to each archived module's `require` line in `go.mod`, then to the source files importing it:
 
 ```
 $ modrot --quickfix
+go.mod:94:github.com/mitchellh/copystructure
 audit/hashstructure.go:14:github.com/mitchellh/copystructure
 sdk/logical/request.go:14:github.com/mitchellh/copystructure
+go.mod:95:github.com/mitchellh/reflectwalk
 audit/hashstructure.go:15:github.com/mitchellh/reflectwalk
 ```
 

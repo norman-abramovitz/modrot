@@ -252,7 +252,7 @@ func runRecursiveQuickfix(modules []moduleInfo, statusMap map[string]RepoStatus,
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
 				continue
 			}
-			PrintFilesPlain(results, fm)
+			PrintFilesPlain(filepath.ToSlash(mi.relPath), results, fm)
 		}
 	}
 

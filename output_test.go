@@ -192,6 +192,52 @@ func TestFormatArchivedLine_NoDates(t *testing.T) {
 	}
 }
 
+// TestPrintFilesPlain_IncludesGomodRequireSite pins issue #18: quickfix output
+// emits the go.mod require site (gomod:line:module) for each archived module,
+// ahead of any source-file import sites.
+func TestPrintFilesPlain_IncludesGomodRequireSite(t *testing.T) {
+	results := []RepoStatus{{
+		Module:     Module{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar", Line: 7},
+		IsArchived: true,
+	}}
+	fileMatches := map[string][]FileMatch{
+		"github.com/foo/bar": {{File: "internal/app.go", Line: 12}},
+	}
+
+	out := captureStdout(t, func() {
+		PrintFilesPlain("go.mod", results, fileMatches)
+	})
+
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	want := []string{
+		"go.mod:7:github.com/foo/bar",
+		"internal/app.go:12:github.com/foo/bar",
+	}
+	if len(lines) != len(want) {
+		t.Fatalf("got %d lines %q, want %d", len(lines), lines, len(want))
+	}
+	for i := range want {
+		if lines[i] != want[i] {
+			t.Errorf("line %d = %q, want %q", i, lines[i], want[i])
+		}
+	}
+}
+
+// TestPrintFilesPlain_SkipsGomodSiteWhenLineUnknown pins that a zero require
+// line does not emit a bogus gomod:0: quickfix target.
+func TestPrintFilesPlain_SkipsGomodSiteWhenLineUnknown(t *testing.T) {
+	results := []RepoStatus{{
+		Module:     Module{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar"},
+		IsArchived: true,
+	}}
+	out := captureStdout(t, func() {
+		PrintFilesPlain("go.mod", results, map[string][]FileMatch{})
+	})
+	if strings.Contains(out, "go.mod:0:") {
+		t.Errorf("should not emit bogus line-0 go.mod site, got %q", out)
+	}
+}
+
 // captureStdout captures stdout output during fn execution.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
@@ -1477,7 +1523,7 @@ func TestPrintFilesPlain(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintFilesPlain(results, fileMatches)
+		PrintFilesPlain("go.mod", results, fileMatches)
 	})
 
 	lines := strings.Split(strings.TrimSpace(output), "\n")
