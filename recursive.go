@@ -196,6 +196,8 @@ func runRecursive(rootDir string, cfg *Config) int {
 		hasAnyArchived = runRecursiveQuickfix(modules, statusMap, cfg)
 	case "json":
 		hasAnyArchived = runRecursiveJSON(modules, statusMap, cfg)
+	case "sarif":
+		hasAnyArchived = runRecursiveSARIF(modules, statusMap, cfg)
 	case "markdown":
 		hasAnyArchived = runRecursiveMarkdown(modules, statusMap, cfg)
 	default:
@@ -328,6 +330,35 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 		_ = enc.Encode(out)
 	}
 
+	return hasAnyArchived
+}
+
+// runRecursiveSARIF outputs one SARIF document covering all go.mod files,
+// each finding anchored to its own go.mod path.
+func runRecursiveSARIF(modules []moduleInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
+	hasAnyArchived := false
+	inputs := make([]SARIFInput, 0, len(modules))
+
+	for _, mi := range modules {
+		results := applyStatus(mi.githubModules, statusMap)
+
+		il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.IgnoreFile, cfg.IgnoreInline)
+		if il.Len() > 0 {
+			results, _ = il.FilterResults(results)
+		}
+
+		if len(getArchivedPaths(results)) > 0 {
+			hasAnyArchived = true
+		}
+
+		inputs = append(inputs, SARIFInput{
+			GomodURI:   filepath.ToSlash(mi.relPath),
+			Results:    results,
+			Deprecated: getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated),
+		})
+	}
+
+	PrintSARIF(inputs)
 	return hasAnyArchived
 }
 

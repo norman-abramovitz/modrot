@@ -150,3 +150,34 @@ func TestPrintSARIF_ValidDocument(t *testing.T) {
 		t.Fatalf("runs = %d", len(runs))
 	}
 }
+
+func TestBuildSARIF_MultipleGoMods(t *testing.T) {
+	inputs := []SARIFInput{
+		{
+			GomodURI: "svc-a/go.mod",
+			Results: []RepoStatus{{
+				Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
+				IsArchived: true,
+			}},
+		},
+		{
+			GomodURI: "svc-b/go.mod",
+			Results: []RepoStatus{{
+				Module:     Module{Path: "github.com/foo/bar", Version: "v1.1.0", Owner: "foo", Repo: "bar"},
+				IsArchived: true,
+			}},
+		},
+	}
+
+	run := buildSARIF(inputs).Runs[0]
+	if len(run.Results) != 2 {
+		t.Fatalf("results = %d, want 2 (one per go.mod)", len(run.Results))
+	}
+	uris := []string{
+		run.Results[0].Locations[0].PhysicalLocation.ArtifactLocation.URI,
+		run.Results[1].Locations[0].PhysicalLocation.ArtifactLocation.URI,
+	}
+	if uris[0] != "svc-a/go.mod" || uris[1] != "svc-b/go.mod" {
+		t.Errorf("uris = %v", uris)
+	}
+}
