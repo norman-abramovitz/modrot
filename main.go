@@ -156,7 +156,7 @@ Examples:
   modrot --markdown --all --deprecated       Markdown for release notes
   modrot --json | jq '.archived[].module'    Scripting with JSON output
   modrot --recursive /path/to/monorepo       Scan all go.mod files in a tree
-  modrot --sarif --deprecated > modrot.sarif     SARIF for GitHub code scanning
+  modrot --sarif > modrot.sarif              SARIF for GitHub code scanning
 `)
 	}
 	flag.Parse()
