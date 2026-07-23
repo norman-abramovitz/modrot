@@ -136,6 +136,42 @@ require (
 	}
 }
 
+func TestParseGoModCapturesRequireLine(t *testing.T) {
+	gomod := `module example.com/myapp
+
+go 1.21
+
+require (
+	github.com/foo/bar v1.2.3
+	github.com/baz/qux v0.1.0 // indirect
+	golang.org/x/text v0.14.0
+)
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "go.mod")
+	if err := os.WriteFile(path, []byte(gomod), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	modules, err := ParseGoMod(path)
+	if err != nil {
+		t.Fatalf("ParseGoMod() error: %v", err)
+	}
+
+	// Each require sits on its own line inside the block: foo/bar on line 6,
+	// baz/qux on line 7, x/text on line 8.
+	wantLines := map[string]int{
+		"github.com/foo/bar": 6,
+		"github.com/baz/qux": 7,
+		"golang.org/x/text":  8,
+	}
+	for _, m := range modules {
+		if got := wantLines[m.Path]; m.Line != got {
+			t.Errorf("%s Line = %d, want %d", m.Path, m.Line, got)
+		}
+	}
+}
+
 func TestParseGoMod_FileNotFound(t *testing.T) {
 	_, err := ParseGoMod("/nonexistent/go.mod")
 	if err == nil {

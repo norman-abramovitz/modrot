@@ -621,16 +621,23 @@ func PrintFiles(results []RepoStatus, fileMatches map[string][]FileMatch) {
 
 // PrintFilesPlain outputs quickfix-format lines: file:line:module_path
 // This format is compatible with vim's quickfix list and similar editor integrations.
-func PrintFilesPlain(results []RepoStatus, fileMatches map[string][]FileMatch) {
+// For each archived module it emits the go.mod require site first (when the
+// require line is known), then every source-file import site.
+func PrintFilesPlain(gomodPath string, results []RepoStatus, fileMatches map[string][]FileMatch) {
+	lineByPath := make(map[string]int)
 	var archivedPaths []string
 	for _, r := range results {
 		if r.IsArchived {
 			archivedPaths = append(archivedPaths, r.Module.Path)
+			lineByPath[r.Module.Path] = r.Module.Line
 		}
 	}
 	sort.Strings(archivedPaths)
 
 	for _, modPath := range archivedPaths {
+		if line := lineByPath[modPath]; line > 0 {
+			_, _ = fmt.Fprintf(os.Stdout, "%s:%d:%s\n", gomodPath, line, modPath)
+		}
 		for _, m := range fileMatches[modPath] {
 			_, _ = fmt.Fprintf(os.Stdout, "%s:%d:%s\n", m.File, m.Line, modPath)
 		}

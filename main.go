@@ -477,7 +477,7 @@ func outputFlat(cfg *Config, gomodRel string, results []RepoStatus, nonGitHubMod
 	switch cfg.OutputFormat {
 	case "quickfix":
 		if fileMatches != nil {
-			PrintFilesPlain(results, fileMatches)
+			PrintFilesPlain(gomodRel, results, fileMatches)
 		}
 	case "sarif":
 		PrintSARIF([]SARIFInput{{GomodURI: gomodRel, Results: results, Deprecated: deprecatedModules}})

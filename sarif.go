@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-// SARIF 2.1.0 output for GitHub code-scanning (issue #17, v1 file-level
-// anchoring). Structs are a hand-rolled subset of the spec — only the
-// fields code-scanning needs.
+// SARIF 2.1.0 output for GitHub code-scanning (issue #17, anchored to the
+// go.mod require line per issue #18). Structs are a hand-rolled subset of the
+// spec — only the fields code-scanning needs.
 
 const sarifSchemaURI = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
 
@@ -79,10 +79,17 @@ type sarifLocation struct {
 
 type sarifPhysicalLocation struct {
 	ArtifactLocation sarifArtifactLocation `json:"artifactLocation"`
+	Region           *sarifRegion          `json:"region,omitempty"`
 }
 
 type sarifArtifactLocation struct {
 	URI string `json:"uri"`
+}
+
+// sarifRegion anchors a location to a specific line. Emitted only when the
+// require line is known; a nil region keeps the location file-level.
+type sarifRegion struct {
+	StartLine int `json:"startLine"`
 }
 
 // sarifRules returns the two rule definitions, always both, in a fixed
@@ -109,13 +116,19 @@ func sarifRules() []sarifRule {
 	}
 }
 
-// sarifGomodLocation returns a single path-only location for the go.mod file.
-func sarifGomodLocation(uri string) []sarifLocation {
-	return []sarifLocation{{
+// sarifGomodLocation returns a location for the go.mod file, anchored to the
+// require line when known (line > 0) and file-level otherwise.
+func sarifGomodLocation(uri string, line int) sarifLocation {
+	var region *sarifRegion
+	if line > 0 {
+		region = &sarifRegion{StartLine: line}
+	}
+	return sarifLocation{
 		PhysicalLocation: sarifPhysicalLocation{
 			ArtifactLocation: sarifArtifactLocation{URI: uri},
+			Region:           region,
 		},
-	}}
+	}
 }
 
 // archivedMessage builds the human-readable message for an archived finding.
@@ -168,17 +181,25 @@ type sarifAgg struct {
 	firstRS      RepoStatus // archived: repo data (dates) from the first occurrence
 	firstMod     Module     // deprecated: module data from the first occurrence
 	versions     map[string]bool
-	locations    []string
+	locations    []sarifOccurrence
 	locSeen      map[string]bool
 }
 
-func (a *sarifAgg) addLocation(uri string) {
+// sarifOccurrence is one {go.mod file, require line} site where a module was
+// found. A module can occur across multiple go.mod files, so an aggregate
+// keeps a list of these.
+type sarifOccurrence struct {
+	uri  string
+	line int
+}
+
+func (a *sarifAgg) addLocation(uri string, line int) {
 	if a.locSeen == nil {
 		a.locSeen = map[string]bool{}
 	}
 	if !a.locSeen[uri] {
 		a.locSeen[uri] = true
-		a.locations = append(a.locations, uri)
+		a.locations = append(a.locations, sarifOccurrence{uri: uri, line: line})
 	}
 }
 
@@ -237,7 +258,7 @@ func buildSARIF(inputs []SARIFInput) sarifLog {
 				order = append(order, key)
 			}
 			a.versions[rs.Module.Version] = true
-			a.addLocation(in.GomodURI)
+			a.addLocation(in.GomodURI, rs.Module.Line)
 		}
 		for _, m := range in.Deprecated {
 			key := ruleDeprecated + "|" + m.Path
@@ -248,7 +269,7 @@ func buildSARIF(inputs []SARIFInput) sarifLog {
 				order = append(order, key)
 			}
 			a.versions[m.Version] = true
-			a.addLocation(in.GomodURI)
+			a.addLocation(in.GomodURI, m.Line)
 		}
 	}
 
@@ -256,8 +277,8 @@ func buildSARIF(inputs []SARIFInput) sarifLog {
 	for _, key := range order {
 		a := aggs[key]
 		locs := make([]sarifLocation, 0, len(a.locations))
-		for _, uri := range a.locations {
-			locs = append(locs, sarifGomodLocation(uri)[0])
+		for _, occ := range a.locations {
+			locs = append(locs, sarifGomodLocation(occ.uri, occ.line))
 		}
 		results = append(results, sarifResult{
 			RuleID:    a.ruleID,
