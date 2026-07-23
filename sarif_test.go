@@ -197,14 +197,55 @@ func TestBuildSARIF_MultipleGoMods(t *testing.T) {
 	}
 
 	run := buildSARIF(inputs).Runs[0]
-	if len(run.Results) != 2 {
-		t.Fatalf("results = %d, want 2 (one per go.mod)", len(run.Results))
+	if len(run.Results) != 1 {
+		t.Fatalf("results = %d, want 1 (deduped, one per rule+module)", len(run.Results))
+	}
+	r := run.Results[0]
+	if len(r.Locations) != 2 {
+		t.Fatalf("locations = %d, want 2", len(r.Locations))
 	}
 	uris := []string{
-		run.Results[0].Locations[0].PhysicalLocation.ArtifactLocation.URI,
-		run.Results[1].Locations[0].PhysicalLocation.ArtifactLocation.URI,
+		r.Locations[0].PhysicalLocation.ArtifactLocation.URI,
+		r.Locations[1].PhysicalLocation.ArtifactLocation.URI,
 	}
 	if uris[0] != "svc-a/go.mod" || uris[1] != "svc-b/go.mod" {
 		t.Errorf("uris = %v", uris)
+	}
+	if strings.Contains(r.Message.Text, "@v1.0.0") || strings.Contains(r.Message.Text, "@v1.1.0") || strings.Contains(r.Message.Text, "@") {
+		t.Errorf("message should omit version when occurrences differ, got %q", r.Message.Text)
+	}
+	if r.PartialFingerprints["modrotFinding/v1"] != "github.com/foo/bar:archived" {
+		t.Errorf("fingerprint = %q", r.PartialFingerprints["modrotFinding/v1"])
+	}
+}
+
+func TestBuildSARIF_MultipleGoMods_SameVersion(t *testing.T) {
+	inputs := []SARIFInput{
+		{
+			GomodURI: "svc-a/go.mod",
+			Results: []RepoStatus{{
+				Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
+				IsArchived: true,
+			}},
+		},
+		{
+			GomodURI: "svc-b/go.mod",
+			Results: []RepoStatus{{
+				Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
+				IsArchived: true,
+			}},
+		},
+	}
+
+	run := buildSARIF(inputs).Runs[0]
+	if len(run.Results) != 1 {
+		t.Fatalf("results = %d, want 1 (deduped, one per rule+module)", len(run.Results))
+	}
+	r := run.Results[0]
+	if len(r.Locations) != 2 {
+		t.Fatalf("locations = %d, want 2", len(r.Locations))
+	}
+	if !strings.Contains(r.Message.Text, "@v1.0.0") {
+		t.Errorf("message should keep version when all occurrences agree, got %q", r.Message.Text)
 	}
 }
