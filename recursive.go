@@ -72,6 +72,17 @@ type moduleInfo struct {
 	nonGHModules  []Module
 }
 
+// sarifGomodURI returns gomodPath relative to cwd, with forward slashes,
+// for use as a SARIF artifact location. Falls back to gomodPath unchanged
+// if it cannot be made relative to cwd.
+func sarifGomodURI(cwd, gomodPath string) string {
+	uri := gomodPath
+	if rel, err := filepath.Rel(cwd, gomodPath); err == nil {
+		uri = rel
+	}
+	return filepath.ToSlash(uri)
+}
+
 // getDeprecatedModules returns modules with non-empty Deprecated field,
 // respecting the directOnly filter. Returns nil if deprecatedMode is false.
 func getDeprecatedModules(allModules []Module, directOnly bool, deprecatedMode bool) []Module {
@@ -175,12 +186,8 @@ func runRecursive(rootDir string, cfg *Config) int {
 			cwd, _ := os.Getwd()
 			inputs := make([]SARIFInput, 0, len(modules))
 			for _, mi := range modules {
-				uri := mi.gomodPath
-				if rel, relErr := filepath.Rel(cwd, mi.gomodPath); relErr == nil {
-					uri = rel
-				}
 				inputs = append(inputs, SARIFInput{
-					GomodURI:   filepath.ToSlash(uri),
+					GomodURI:   sarifGomodURI(cwd, mi.gomodPath),
 					Deprecated: getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated),
 				})
 			}
@@ -353,6 +360,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 func runRecursiveSARIF(modules []moduleInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	hasAnyArchived := false
 	inputs := make([]SARIFInput, 0, len(modules))
+	cwd, _ := os.Getwd()
 
 	for _, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
@@ -367,7 +375,7 @@ func runRecursiveSARIF(modules []moduleInfo, statusMap map[string]RepoStatus, cf
 		}
 
 		inputs = append(inputs, SARIFInput{
-			GomodURI:   filepath.ToSlash(mi.relPath),
+			GomodURI:   sarifGomodURI(cwd, mi.gomodPath),
 			Results:    results,
 			Deprecated: getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated),
 		})
