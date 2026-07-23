@@ -158,37 +158,116 @@ func deprecatedMessage(m Module) string {
 	return b.String()
 }
 
+// sarifAgg accumulates every occurrence of one (rule, module path) pair
+// across all scanned go.mod files, so buildSARIF can emit a single result
+// with multiple locations instead of one result per occurrence.
+type sarifAgg struct {
+	ruleID       string
+	level        string
+	isDeprecated bool
+	firstRS      RepoStatus // archived: repo data (dates) from the first occurrence
+	firstMod     Module     // deprecated: module data from the first occurrence
+	versions     map[string]bool
+	locations    []string
+	locSeen      map[string]bool
+}
+
+func (a *sarifAgg) addLocation(uri string) {
+	if a.locSeen == nil {
+		a.locSeen = map[string]bool{}
+	}
+	if !a.locSeen[uri] {
+		a.locSeen[uri] = true
+		a.locations = append(a.locations, uri)
+	}
+}
+
+// message builds this aggregate's human-readable message. When the module
+// occurred at more than one version across go.mod files, the version is
+// omitted rather than picking one arbitrarily.
+func (a *sarifAgg) message() string {
+	multiVersion := len(a.versions) > 1
+	if a.isDeprecated {
+		m := a.firstMod
+		if multiVersion {
+			m.Version = ""
+		}
+		return deprecatedMessage(m)
+	}
+	rs := a.firstRS
+	if multiVersion {
+		rs.Module.Version = ""
+	}
+	return archivedMessage(rs)
+}
+
+func (a *sarifAgg) modulePath() string {
+	if a.isDeprecated {
+		return a.firstMod.Path
+	}
+	return a.firstRS.Module.Path
+}
+
+func (a *sarifAgg) fingerprintSuffix() string {
+	if a.isDeprecated {
+		return ":deprecated"
+	}
+	return ":archived"
+}
+
 // buildSARIF assembles one SARIF run from per-go.mod inputs. Results is
-// always non-nil so it serializes as [] rather than null.
+// always non-nil so it serializes as [] rather than null. Occurrences of
+// the same module (by rule + module path) across multiple go.mod files are
+// merged into a single result with one location per distinct go.mod, so
+// partialFingerprints stay unique per result.
 func buildSARIF(inputs []SARIFInput) sarifLog {
-	results := []sarifResult{}
+	var order []string
+	aggs := map[string]*sarifAgg{}
+
 	for _, in := range inputs {
-		loc := sarifGomodLocation(in.GomodURI)
 		for _, rs := range in.Results {
 			if !rs.IsArchived {
 				continue
 			}
-			results = append(results, sarifResult{
-				RuleID:    ruleArchived,
-				Level:     "warning",
-				Message:   sarifText{Text: archivedMessage(rs)},
-				Locations: loc,
-				PartialFingerprints: map[string]string{
-					"modrotFinding/v1": rs.Module.Path + ":archived",
-				},
-			})
+			key := ruleArchived + "|" + rs.Module.Path
+			a, ok := aggs[key]
+			if !ok {
+				a = &sarifAgg{ruleID: ruleArchived, level: "warning", firstRS: rs, versions: map[string]bool{}}
+				aggs[key] = a
+				order = append(order, key)
+			}
+			a.versions[rs.Module.Version] = true
+			a.addLocation(in.GomodURI)
 		}
 		for _, m := range in.Deprecated {
-			results = append(results, sarifResult{
-				RuleID:    ruleDeprecated,
-				Level:     "note",
-				Message:   sarifText{Text: deprecatedMessage(m)},
-				Locations: loc,
-				PartialFingerprints: map[string]string{
-					"modrotFinding/v1": m.Path + ":deprecated",
-				},
-			})
+			key := ruleDeprecated + "|" + m.Path
+			a, ok := aggs[key]
+			if !ok {
+				a = &sarifAgg{ruleID: ruleDeprecated, level: "note", isDeprecated: true, firstMod: m, versions: map[string]bool{}}
+				aggs[key] = a
+				order = append(order, key)
+			}
+			a.versions[m.Version] = true
+			a.addLocation(in.GomodURI)
 		}
+	}
+
+	results := []sarifResult{}
+	for _, key := range order {
+		a := aggs[key]
+		locs := make([]sarifLocation, 0, len(a.locations))
+		for _, uri := range a.locations {
+			locs = append(locs, sarifGomodLocation(uri)[0])
+		}
+		results = append(results, sarifResult{
+			RuleID:    a.ruleID,
+			Level:     a.level,
+			Message:   sarifText{Text: a.message()},
+			Locations: locs,
+			PartialFingerprints: map[string]string{
+				"modrotFinding/v1": a.modulePath() + a.fingerprintSuffix(),
+			},
+		})
 	}
 
 	return sarifLog{
