@@ -14,6 +14,7 @@ type Module struct {
 	Path          string // full module path, e.g. "github.com/foo/bar/v2"
 	Version       string
 	Direct        bool
+	Line          int       // 1-based require line in the source go.mod (0 if unknown)
 	Owner         string    // GitHub owner (empty if non-GitHub)
 	Repo          string    // GitHub repo name (empty if non-GitHub)
 	Deprecated    string    // deprecation message from go.mod, empty if not deprecated
@@ -41,6 +42,9 @@ func ParseGoMod(path string) ([]Module, error) {
 			Path:    req.Mod.Path,
 			Version: req.Mod.Version,
 			Direct:  !req.Indirect,
+		}
+		if req.Syntax != nil {
+			m.Line = req.Syntax.Start.Line
 		}
 		m.Owner, m.Repo = extractGitHub(req.Mod.Path)
 		modules = append(modules, m)
