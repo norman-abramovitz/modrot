@@ -502,17 +502,25 @@ func parseNPMUnit(dir string) (*ParseResult, error) {
 		}
 	}
 
-	direct := make(map[string]bool, len(directMods))
 	for i := range directMods {
-		direct[directMods[i].Path] = true
 		if v, ok := resolved[directMods[i].Path]; ok && v != "" {
 			directMods[i].Version = v
 		}
 	}
 
+	// Skip only the exact version that was promoted to direct. Another
+	// version of the same package, pulled in transitively by something else,
+	// is a genuine entry in its own right — and since deprecation is a
+	// per-version fact, dropping it by name would lose real findings, the
+	// same collapse the lockfile parsers deliberately avoid.
+	directVersion := make(map[string]string, len(directMods))
+	for _, m := range directMods {
+		directVersion[m.Path] = m.Version
+	}
+
 	mods := directMods
 	for _, m := range lockMods {
-		if direct[m.Path] {
+		if v, ok := directVersion[m.Path]; ok && v == m.Version {
 			continue // already present, anchored to package.json
 		}
 		mods = append(mods, m)

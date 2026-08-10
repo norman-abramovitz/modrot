@@ -671,6 +671,70 @@ func TestParseNPMUnitWithLockfile(t *testing.T) {
 	}
 }
 
+// A package can be a direct dependency at one version and be pulled in
+// transitively at another. Both are real: the second is what some other
+// package actually resolved to, and deprecation is a per-version fact.
+// Collapsing by name would lose it — the same mistake the lockfile parsers
+// deliberately avoid.
+func TestParseNPMUnitKeepsOtherVersionsOfADirectDep(t *testing.T) {
+	const pkg = `{
+  "name": "my-app",
+  "dependencies": {
+    "foo": "^1.0.0"
+  }
+}
+`
+	const lock = `{
+  "lockfileVersion": 3,
+  "packages": {
+    "": { "name": "my-app" },
+    "node_modules/foo": { "version": "1.0.0" },
+    "node_modules/other/node_modules/foo": { "version": "2.0.0" }
+  }
+}
+`
+	dir := t.TempDir()
+	writeFile(t, dir, "package.json", pkg)
+	writeFile(t, dir, "package-lock.json", lock)
+
+	res, err := parseNPMUnit(dir)
+	if err != nil {
+		t.Fatalf("parseNPMUnit: %v", err)
+	}
+
+	var direct, transitive []Module
+	for _, m := range res.Modules {
+		if m.Path != "foo" {
+			continue
+		}
+		if m.Direct {
+			direct = append(direct, m)
+		} else {
+			transitive = append(transitive, m)
+		}
+	}
+
+	if len(direct) != 1 {
+		t.Fatalf("got %d direct foo entries, want 1", len(direct))
+	}
+	if direct[0].Version != "1.0.0" {
+		t.Errorf("direct foo = %s, want 1.0.0 (the hoisted copy)", direct[0].Version)
+	}
+	if direct[0].LineFile != "package.json" {
+		t.Errorf("direct foo anchored to %s, want package.json", direct[0].LineFile)
+	}
+
+	if len(transitive) != 1 {
+		t.Fatalf("got %d transitive foo entries, want 1 (foo@2.0.0 must survive)", len(transitive))
+	}
+	if transitive[0].Version != "2.0.0" {
+		t.Errorf("transitive foo = %s, want 2.0.0", transitive[0].Version)
+	}
+	if transitive[0].LineFile != "package-lock.json" {
+		t.Errorf("transitive foo anchored to %s, want package-lock.json", transitive[0].LineFile)
+	}
+}
+
 func TestParseNPMUnitUnlocked(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "package.json", testPackageJSON)
