@@ -8,6 +8,28 @@ import (
 	"sort"
 )
 
+// skipAfterDelim consumes tokens until the composite value whose opening
+// delimiter was just read is balanced. Call it immediately after reading an
+// opening '[' or '{' that should be discarded rather than walked.
+func skipAfterDelim(dec *json.Decoder) error {
+	depth := 1
+	for depth > 0 {
+		t, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		if d, ok := t.(json.Delim); ok {
+			switch d {
+			case '{', '[':
+				depth++
+			case '}', ']':
+				depth--
+			}
+		}
+	}
+	return nil
+}
+
 // depLines walks a JSON document and, for each requested top-level section,
 // returns that section object's keys mapped to their 1-based line numbers.
 // Sections that are absent or are not objects are omitted from the result.
@@ -48,11 +70,16 @@ func depLines(src []byte, li *lineIndex, sections []string) (map[string]map[stri
 		if err != nil {
 			return nil, fmt.Errorf("reading %q: %w", key, err)
 		}
-		if d, ok := vt.(json.Delim); !ok || d != '{' {
-			// Not an object — consume whatever it is and move on.
-			if _, ok := vt.(json.Delim); ok {
-				var skip json.RawMessage
-				_ = dec.Decode(&skip)
+		d, isDelim := vt.(json.Delim)
+		if !isDelim {
+			continue // scalar or null: Token consumed the whole value
+		}
+		if d != '{' {
+			// An array. Token consumed only the opening bracket, so the
+			// rest must be walked to its match. Decode would read just the
+			// next element and desync the decoder for every later section.
+			if err := skipAfterDelim(dec); err != nil {
+				return nil, fmt.Errorf("skipping %q: %w", key, err)
 			}
 			continue
 		}
@@ -75,7 +102,16 @@ func depLines(src []byte, li *lineIndex, sections []string) (map[string]map[stri
 		if _, err := dec.Token(); err != nil { // closing brace
 			return nil, fmt.Errorf("closing %q: %w", key, err)
 		}
-		out[key] = entries
+		// A section key can legally appear more than once; encoding/json
+		// merges such objects with the last value winning, so match that
+		// rather than dropping the earlier occurrence's lines.
+		if prev, ok := out[key]; ok {
+			for k, v := range entries {
+				prev[k] = v
+			}
+		} else {
+			out[key] = entries
+		}
 	}
 	return out, nil
 }
