@@ -16,6 +16,12 @@ func TestStripJSONC(t *testing.T) {
 		{"block comment", `{/* no */"a": 1}`, `{        "a": 1}`},
 		{"escaped quote in string", `{"a": "x\"//y"}`, `{"a": "x\"//y"}`},
 		{"no change", `{"a": 1}`, `{"a": 1}`},
+		// The opener's own '*' must not pair with the following '/'.
+		{"slash-star-slash opener", `{"a":1,/*/ x */"c":3}`, `{"a":1,        "c":3}`},
+		{"trailing comma after nested array", `{"a":[1,2],}`, `{"a":[1,2] }`},
+		{"trailing comma after nested object", `{"a":{"x":1},}`, `{"a":{"x":1} }`},
+		// A separator comma between members must survive.
+		{"separator comma kept", `{"a":{"x":1},"b":2}`, `{"a":{"x":1},"b":2}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
