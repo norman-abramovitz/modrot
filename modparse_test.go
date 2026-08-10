@@ -334,3 +334,31 @@ func TestFilterGitHub_DeduplicatesMultiPathRepos(t *testing.T) {
 		t.Errorf("expected first occurrence to be kept, got %q", gh[0].Path)
 	}
 }
+
+func TestParseGoModSetsEcosystemAndLineFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "go.mod")
+	content := `module example.com/test
+
+go 1.21
+
+require github.com/foo/bar v1.2.3
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	mods, err := ParseGoMod(path)
+	if err != nil {
+		t.Fatalf("ParseGoMod: %v", err)
+	}
+	if len(mods) != 1 {
+		t.Fatalf("got %d modules, want 1", len(mods))
+	}
+	if mods[0].Ecosystem != "go" {
+		t.Errorf("Ecosystem = %q, want %q", mods[0].Ecosystem, "go")
+	}
+	if mods[0].LineFile != "go.mod" {
+		t.Errorf("LineFile = %q, want %q", mods[0].LineFile, "go.mod")
+	}
+}
