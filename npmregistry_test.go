@@ -157,9 +157,13 @@ func TestResolveNPMUnlockedUsesLatest(t *testing.T) {
 // encoding it — encoding would turn a valid path into a 404, which the client
 // would then treat as "package does not exist" and silently report nothing.
 func TestNPMClientScopedNames(t *testing.T) {
-	var gotPath string
+	var gotURI string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
+		// RequestURI is the raw request line. r.URL.Path is Go's DECODED
+		// form, in which a percent-encoded slash is indistinguishable from a
+		// literal one, so asserting on it would pass even if the client
+		// escaped the scope separator — a false guarantee.
+		gotURI = r.RequestURI
 		_, _ = w.Write([]byte(`{"version":"7.24.0","repository":{"url":"git+https://github.com/babel/babel.git"}}`))
 	}))
 	t.Cleanup(srv.Close)
@@ -171,8 +175,8 @@ func TestNPMClientScopedNames(t *testing.T) {
 	if got := resolveNPMWithClient(mods, c); got != 1 {
 		t.Fatalf("resolved %d, want 1", got)
 	}
-	if gotPath != "/@babel/core/7.24.0" {
-		t.Errorf("requested %q, want /@babel/core/7.24.0 with the scope slash unescaped", gotPath)
+	if gotURI != "/@babel/core/7.24.0" {
+		t.Errorf("requested %q, want /@babel/core/7.24.0 with the scope slash unescaped", gotURI)
 	}
 	if mods[0].Owner != "babel" || mods[0].Repo != "babel" {
 		t.Errorf("got %s/%s, want babel/babel", mods[0].Owner, mods[0].Repo)
