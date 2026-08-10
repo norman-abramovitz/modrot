@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 )
 
 // skipAfterDelim consumes tokens until the composite value whose opening
@@ -169,4 +170,148 @@ func parsePackageJSON(path string) (string, []Module, error) {
 
 	sort.Slice(mods, func(i, j int) bool { return mods[i].Path < mods[j].Path })
 	return pj.Name, mods, nil
+}
+
+// packageLock is the subset of package-lock.json modrot reads. Lockfile v2
+// carries both maps; v3 carries only Packages; v1 only Dependencies.
+type packageLock struct {
+	Packages     map[string]packageLockEntry `json:"packages"`
+	Dependencies map[string]packageLockDep   `json:"dependencies"`
+}
+
+type packageLockEntry struct {
+	Version string `json:"version"`
+	Link    bool   `json:"link"`
+}
+
+type packageLockDep struct {
+	Version      string                    `json:"version"`
+	Dependencies map[string]packageLockDep `json:"dependencies"`
+}
+
+// nodeModulesMarker separates install-depth segments in package-lock keys.
+const nodeModulesMarker = "node_modules/"
+
+// lockPackageName extracts the package name from a package-lock "packages"
+// key. Keys are node_modules paths, and nested installs repeat the segment:
+//
+//	node_modules/xterm                     -> xterm
+//	node_modules/@babel/core               -> @babel/core
+//	node_modules/a/node_modules/nested     -> nested
+//
+// The empty key denotes the root project and yields "". Workspace entries
+// (e.g. "packages/ui") contain no marker and also yield "", which correctly
+// excludes local packages from registry lookups.
+func lockPackageName(key string) string {
+	idx := strings.LastIndex(key, nodeModulesMarker)
+	if idx < 0 {
+		return ""
+	}
+	return key[idx+len(nodeModulesMarker):]
+}
+
+// lockKeyDepth counts install-depth segments, so the hoisted top-level copy
+// of a package sorts before any nested copy.
+func lockKeyDepth(key string) int {
+	return strings.Count(key, nodeModulesMarker)
+}
+
+// parsePackageLock reads package-lock.json (v1, v2, or v3) and returns the
+// resolved package set. Every entry is reported as indirect; parseNPMUnit
+// promotes the ones package.json declares. Nested v1 entries carry no line,
+// which downstream renders as a file-level location.
+func parsePackageLock(path string) ([]Module, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- path comes from directory discovery
+	if err != nil {
+		return nil, fmt.Errorf("reading package-lock.json: %w", err)
+	}
+
+	var pl packageLock
+	if err := json.Unmarshal(data, &pl); err != nil {
+		return nil, fmt.Errorf("parsing package-lock.json: %w", err)
+	}
+
+	li := newLineIndex(data)
+	lines, err := depLines(data, li, []string{"packages", "dependencies"})
+	if err != nil {
+		return nil, fmt.Errorf("indexing package-lock.json: %w", err)
+	}
+
+	var mods []Module
+	seen := map[string]bool{}
+	addMod := func(name, version string, line int) {
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		mods = append(mods, Module{
+			Path:      name,
+			Version:   version,
+			Direct:    false,
+			Line:      line,
+			LineFile:  "package-lock.json",
+			Ecosystem: "npm",
+		})
+	}
+
+	// Iteration order below is deliberate and load-bearing. npm can install
+	// the same package at several depths with different versions, and only
+	// the first one seen is reported. Ranging over a Go map would pick a
+	// different one on every run, making modrot's output — and its SARIF
+	// results — vary between identical scans. Shallowest install wins, which
+	// is the hoisted copy the project actually resolves to.
+	if len(pl.Packages) > 0 {
+		// v2 and v3: the flat "packages" map is authoritative.
+		keys := make([]string, 0, len(pl.Packages))
+		for key := range pl.Packages {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(i, j int) bool {
+			di, dj := lockKeyDepth(keys[i]), lockKeyDepth(keys[j])
+			if di != dj {
+				return di < dj
+			}
+			return keys[i] < keys[j]
+		})
+		for _, key := range keys {
+			entry := pl.Packages[key]
+			if key == "" || entry.Link {
+				continue
+			}
+			addMod(lockPackageName(key), entry.Version, lines["packages"][key])
+		}
+	} else {
+		// v1: walk the nested "dependencies" tree breadth-first, so every
+		// top-level entry is recorded before any nested one. Only top-level
+		// entries have a cheaply recoverable line.
+		level := pl.Dependencies
+		topLevel := true
+		for len(level) > 0 {
+			names := make([]string, 0, len(level))
+			for name := range level {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+
+			next := map[string]packageLockDep{}
+			for _, name := range names {
+				dep := level[name]
+				line := 0
+				if topLevel {
+					line = lines["dependencies"][name]
+				}
+				addMod(name, dep.Version, line)
+				for childName, child := range dep.Dependencies {
+					if _, exists := next[childName]; !exists {
+						next[childName] = child
+					}
+				}
+			}
+			level = next
+			topLevel = false
+		}
+	}
+
+	sort.Slice(mods, func(i, j int) bool { return mods[i].Path < mods[j].Path })
+	return mods, nil
 }
