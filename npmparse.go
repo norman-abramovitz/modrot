@@ -315,3 +315,118 @@ func parsePackageLock(path string) ([]Module, error) {
 	sort.Slice(mods, func(i, j int) bool { return mods[i].Path < mods[j].Path })
 	return mods, nil
 }
+
+// bunKeyDepth counts the dependency-chain segments in a bun.lock key.
+// Transitive resolutions nest as "<parent>/<child>", and a scoped name
+// contributes a single segment despite containing a slash:
+//
+//	negotiator                            -> 1
+//	@angular-devkit/core                  -> 1
+//	accepts/negotiator                    -> 2
+//	angular-eslint/@angular-devkit/core   -> 2
+func bunKeyDepth(key string) int {
+	parts := strings.Split(key, "/")
+	depth := 0
+	for i := 0; i < len(parts); i++ {
+		if strings.HasPrefix(parts[i], "@") && i+1 < len(parts) {
+			i++ // scope and name are one segment
+		}
+		depth++
+	}
+	return depth
+}
+
+// splitNameVersion splits a bun.lock package specifier into name and version.
+// Scoped names begin with @ and contain a second @ before the version, so the
+// split is on the last @ rather than the first.
+func splitNameVersion(spec string) (name, version string) {
+	idx := strings.LastIndex(spec, "@")
+	if idx <= 0 { // no @, or a leading @ that is the scope marker
+		return spec, ""
+	}
+	return spec[:idx], spec[idx+1:]
+}
+
+// parseBunLock reads bun.lock and returns the resolved package set. The file
+// is JSONC, so it is normalized first; StripJSONC preserves byte offsets,
+// which keeps the line numbers accurate against the file on disk.
+//
+// Every entry is reported as indirect; parseNPMUnit promotes the direct ones.
+func parseBunLock(path string) ([]Module, error) {
+	raw, err := os.ReadFile(path) // #nosec G304 -- path comes from directory discovery
+	if err != nil {
+		return nil, fmt.Errorf("reading bun.lock: %w", err)
+	}
+	data := StripJSONC(raw)
+
+	var bl struct {
+		Packages map[string]json.RawMessage `json:"packages"`
+	}
+	if err := json.Unmarshal(data, &bl); err != nil {
+		return nil, fmt.Errorf("parsing bun.lock: %w", err)
+	}
+
+	li := newLineIndex(data)
+	lines, err := depLines(data, li, []string{"packages"})
+	if err != nil {
+		return nil, fmt.Errorf("indexing bun.lock: %w", err)
+	}
+
+	// Walk keys in a fixed order. bun.lock nests transitive resolutions as
+	// "<parent>/<child>", so one package can appear under several keys —
+	// measured on a real 1841-entry lockfile, 300 keys are exact duplicates.
+	// Which key is kept decides which line the finding anchors to, and
+	// ranging over a map would pick a different one on each run, making
+	// SARIF startLine values flap between identical scans. Shallowest wins.
+	keys := make([]string, 0, len(bl.Packages))
+	for key := range bl.Packages {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		di, dj := bunKeyDepth(keys[i]), bunKeyDepth(keys[j])
+		if di != dj {
+			return di < dj
+		}
+		return keys[i] < keys[j]
+	})
+
+	// Deduplicate on name AND version, never on name alone. A real lockfile
+	// legitimately resolves several versions of the same package (measured:
+	// 218 such packages in that same file, e.g. @babel/code-frame at 8.0.0,
+	// 7.29.0 and 7.29.7). Deprecation is a per-version fact, so collapsing
+	// to one version per name would silently discard real findings.
+	type nameVersion struct{ name, version string }
+	seen := make(map[nameVersion]bool, len(keys))
+
+	var mods []Module
+	for _, key := range keys {
+		var entry []json.RawMessage
+		if err := json.Unmarshal(bl.Packages[key], &entry); err != nil || len(entry) == 0 {
+			continue
+		}
+		var spec string
+		if err := json.Unmarshal(entry[0], &spec); err != nil {
+			continue
+		}
+		name, version := splitNameVersion(spec)
+		if name == "" {
+			name = key
+		}
+		nv := nameVersion{name, version}
+		if seen[nv] {
+			continue
+		}
+		seen[nv] = true
+		mods = append(mods, Module{
+			Path:      name,
+			Version:   version,
+			Direct:    false,
+			Line:      lines["packages"][key],
+			LineFile:  "bun.lock",
+			Ecosystem: "npm",
+		})
+	}
+
+	sort.Slice(mods, func(i, j int) bool { return mods[i].Path < mods[j].Path })
+	return mods, nil
+}

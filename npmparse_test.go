@@ -380,3 +380,181 @@ func TestParsePackageLockV1(t *testing.T) {
 		t.Errorf("got %d modules, want 3", len(mods))
 	}
 }
+
+// Real bun.lock shape: JSONC with trailing commas, packages entries are
+// arrays whose first element is "<name>@<version>".
+const testBunLock = `{
+  "lockfileVersion": 1,
+  "workspaces": {
+    "": {
+      "devDependencies": {
+        "@playwright/test": "^1.58.2",
+      },
+    },
+  },
+  "packages": {
+    "@playwright/test": ["@playwright/test@1.58.2", "", {}, "sha512-aaa=="],
+
+    "playwright": ["playwright@1.58.2", "", {}, "sha512-bbb=="],
+
+    "fsevents": ["fsevents@2.3.2", "", { "os": "darwin" }, "sha512-ccc=="],
+  }
+}
+`
+
+func TestParseBunLock(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "bun.lock", testBunLock)
+
+	mods, err := parseBunLock(path)
+	if err != nil {
+		t.Fatalf("parseBunLock: %v", err)
+	}
+
+	byPath := map[string]Module{}
+	for _, m := range mods {
+		byPath[m.Path] = m
+	}
+
+	tests := []struct {
+		path    string
+		version string
+		line    int
+	}{
+		{"@playwright/test", "1.58.2", 11},
+		{"playwright", "1.58.2", 13},
+		{"fsevents", "2.3.2", 15},
+	}
+	for _, tt := range tests {
+		m, ok := byPath[tt.path]
+		if !ok {
+			t.Errorf("%s: missing", tt.path)
+			continue
+		}
+		if m.Version != tt.version {
+			t.Errorf("%s: Version = %q, want %q", tt.path, m.Version, tt.version)
+		}
+		if m.Line != tt.line {
+			t.Errorf("%s: Line = %d, want %d", tt.path, m.Line, tt.line)
+		}
+		if m.LineFile != "bun.lock" {
+			t.Errorf("%s: LineFile = %q, want bun.lock", tt.path, m.LineFile)
+		}
+		if m.Ecosystem != "npm" {
+			t.Errorf("%s: Ecosystem = %q, want npm", tt.path, m.Ecosystem)
+		}
+	}
+	if len(mods) != 3 {
+		t.Errorf("got %d modules, want 3", len(mods))
+	}
+}
+
+func TestBunKeyDepth(t *testing.T) {
+	tests := []struct {
+		key  string
+		want int
+	}{
+		{"negotiator", 1},
+		{"@angular-devkit/core", 1},
+		{"accepts/negotiator", 2},
+		{"angular-eslint/@angular-devkit/core", 2},
+		{"a/b/c", 3},
+	}
+	for _, tt := range tests {
+		if got := bunKeyDepth(tt.key); got != tt.want {
+			t.Errorf("bunKeyDepth(%q) = %d, want %d", tt.key, got, tt.want)
+		}
+	}
+}
+
+// bun.lock nests transitive resolutions, so the same package appears under
+// several keys. Exact duplicates collapse; genuinely different versions of
+// one package must all survive, because deprecation is per-version.
+func TestParseBunLockDeduplicatesByNameAndVersion(t *testing.T) {
+	const nested = `{
+  "lockfileVersion": 1,
+  "packages": {
+    "@babel/code-frame": ["@babel/code-frame@7.29.7", "", {}, "sha512-a=="],
+    "accepts/negotiator": ["negotiator@0.6.3", "", {}, "sha512-b=="],
+    "negotiator": ["negotiator@0.6.3", "", {}, "sha512-b=="],
+    "wrapper/@babel/code-frame": ["@babel/code-frame@8.0.0", "", {}, "sha512-c=="],
+  }
+}
+`
+	dir := t.TempDir()
+	path := writeFile(t, dir, "bun.lock", nested)
+
+	mods, err := parseBunLock(path)
+	if err != nil {
+		t.Fatalf("parseBunLock: %v", err)
+	}
+
+	// negotiator@0.6.3 appears twice and must collapse to one entry,
+	// anchored to the shallower "negotiator" key.
+	var negotiators []Module
+	var codeFrames []Module
+	for _, m := range mods {
+		switch m.Path {
+		case "negotiator":
+			negotiators = append(negotiators, m)
+		case "@babel/code-frame":
+			codeFrames = append(codeFrames, m)
+		}
+	}
+	if len(negotiators) != 1 {
+		t.Errorf("negotiator: got %d entries, want 1 (exact duplicate)", len(negotiators))
+	} else if negotiators[0].Line != 6 {
+		t.Errorf("negotiator anchored to line %d, want 6 (the shallower key)", negotiators[0].Line)
+	}
+	// Two real versions of one package must both survive.
+	if len(codeFrames) != 2 {
+		t.Errorf("@babel/code-frame: got %d entries, want 2 distinct versions", len(codeFrames))
+	}
+}
+
+// The retained entry's line must not depend on map iteration order.
+func TestParseBunLockDeterministicLines(t *testing.T) {
+	const nested = `{
+  "lockfileVersion": 1,
+  "packages": {
+    "accepts/negotiator": ["negotiator@0.6.3", "", {}, "sha512-b=="],
+    "negotiator": ["negotiator@0.6.3", "", {}, "sha512-b=="],
+  }
+}
+`
+	dir := t.TempDir()
+	path := writeFile(t, dir, "bun.lock", nested)
+
+	for i := 0; i < 25; i++ {
+		mods, err := parseBunLock(path)
+		if err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+		if len(mods) != 1 {
+			t.Fatalf("run %d: got %d modules, want 1", i, len(mods))
+		}
+		if mods[0].Line != 5 {
+			t.Fatalf("run %d: line = %d, want 5 (the shallower key)", i, mods[0].Line)
+		}
+	}
+}
+
+func TestSplitNameVersion(t *testing.T) {
+	tests := []struct {
+		in      string
+		name    string
+		version string
+	}{
+		{"xterm@5.3.0", "xterm", "5.3.0"},
+		{"@babel/core@7.24.0", "@babel/core", "7.24.0"},
+		{"@scope/pkg@1.0.0-beta.1", "@scope/pkg", "1.0.0-beta.1"},
+		{"noversion", "noversion", ""},
+	}
+	for _, tt := range tests {
+		name, version := splitNameVersion(tt.in)
+		if name != tt.name || version != tt.version {
+			t.Errorf("splitNameVersion(%q) = (%q, %q), want (%q, %q)",
+				tt.in, name, version, tt.name, tt.version)
+		}
+	}
+}
