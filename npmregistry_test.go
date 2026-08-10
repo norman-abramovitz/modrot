@@ -152,6 +152,33 @@ func TestResolveNPMUnlockedUsesLatest(t *testing.T) {
 	}
 }
 
+// Scoped names contain a slash and are the common case in modern npm trees.
+// The registry accepts the slash unescaped, so the URL must be built without
+// encoding it — encoding would turn a valid path into a 404, which the client
+// would then treat as "package does not exist" and silently report nothing.
+func TestNPMClientScopedNames(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"version":"7.24.0","repository":{"url":"git+https://github.com/babel/babel.git"}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := newNPMClient()
+	c.baseURL = srv.URL
+
+	mods := []Module{{Path: "@babel/core", Version: "7.24.0", Ecosystem: "npm"}}
+	if got := resolveNPMWithClient(mods, c); got != 1 {
+		t.Fatalf("resolved %d, want 1", got)
+	}
+	if gotPath != "/@babel/core/7.24.0" {
+		t.Errorf("requested %q, want /@babel/core/7.24.0 with the scope slash unescaped", gotPath)
+	}
+	if mods[0].Owner != "babel" || mods[0].Repo != "babel" {
+		t.Errorf("got %s/%s, want babel/babel", mods[0].Owner, mods[0].Repo)
+	}
+}
+
 // A 404 is a definitive answer and gets cached; a transient failure is an
 // absence of information and must not be, so a later phase retries it.
 // Conflating them would let modrot report a clean scan while having silently
