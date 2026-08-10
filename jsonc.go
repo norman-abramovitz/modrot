@@ -35,6 +35,12 @@ func StripJSONC(src []byte) []byte {
 				i++
 			}
 		case c == '/' && i+1 < len(out) && out[i+1] == '*':
+			// Consume both opener bytes before scanning for the closer.
+			// Starting the scan on the opening '/' would let the opener's
+			// own '*' pair with a following '/' and close the comment three
+			// bytes early, e.g. in "/*/ ... */".
+			out[i], out[i+1] = ' ', ' '
+			i += 2
 			for i < len(out) {
 				if out[i] == '*' && i+1 < len(out) && out[i+1] == '/' {
 					out[i], out[i+1] = ' ', ' '
