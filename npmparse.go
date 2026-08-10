@@ -237,13 +237,23 @@ func parsePackageLock(path string) ([]Module, error) {
 		return nil, fmt.Errorf("indexing package-lock.json: %w", err)
 	}
 
+	// Deduplicate on name AND version, matching parseBunLock. npm installs
+	// several versions of one package at different depths — measured on a
+	// real 1868-key lockfile, 196 names carry more than one version — and
+	// deprecation is a per-version fact, so collapsing by name alone would
+	// silently discard real findings.
+	type nameVersion struct{ name, version string }
 	var mods []Module
-	seen := map[string]bool{}
+	seen := make(map[nameVersion]bool)
 	addMod := func(name, version string, line int) {
-		if name == "" || seen[name] {
+		if name == "" {
 			return
 		}
-		seen[name] = true
+		nv := nameVersion{name, version}
+		if seen[nv] {
+			return
+		}
+		seen[nv] = true
 		mods = append(mods, Module{
 			Path:      name,
 			Version:   version,
@@ -312,7 +322,9 @@ func parsePackageLock(path string) ([]Module, error) {
 		}
 	}
 
-	sort.Slice(mods, func(i, j int) bool { return mods[i].Path < mods[j].Path })
+	// Stable: ties on Path are real (one package at several versions), and
+	// insertion order is shallowest-install-first, which parseNPMUnit relies on.
+	sort.SliceStable(mods, func(i, j int) bool { return mods[i].Path < mods[j].Path })
 	return mods, nil
 }
 
@@ -427,6 +439,8 @@ func parseBunLock(path string) ([]Module, error) {
 		})
 	}
 
-	sort.Slice(mods, func(i, j int) bool { return mods[i].Path < mods[j].Path })
+	// Stable: ties on Path are real (one package at several versions), and
+	// insertion order is shallowest-install-first, which parseNPMUnit relies on.
+	sort.SliceStable(mods, func(i, j int) bool { return mods[i].Path < mods[j].Path })
 	return mods, nil
 }

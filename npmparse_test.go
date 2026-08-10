@@ -240,6 +240,57 @@ func TestParsePackageLockV3(t *testing.T) {
 	}
 }
 
+// Several versions of one package legitimately coexist in a lockfile
+// (measured: 196 such names in a real 1868-key file). Deprecation is a
+// per-version fact, so every distinct version must survive; only exact
+// (name, version) duplicates collapse.
+func TestParsePackageLockKeepsDistinctVersions(t *testing.T) {
+	const multiVersion = `{
+  "lockfileVersion": 3,
+  "packages": {
+    "": { "name": "root" },
+    "node_modules/esbuild": { "version": "0.27.7" },
+    "node_modules/a/node_modules/esbuild": { "version": "0.25.9" },
+    "node_modules/b/node_modules/esbuild": { "version": "0.25.9" },
+    "node_modules/c/node_modules/esbuild": { "version": "0.27.3" }
+  }
+}
+`
+	dir := t.TempDir()
+	path := writeFile(t, dir, "package-lock.json", multiVersion)
+
+	mods, err := parsePackageLock(path)
+	if err != nil {
+		t.Fatalf("parsePackageLock: %v", err)
+	}
+	versions := map[string]bool{}
+	for _, m := range mods {
+		if m.Path != "esbuild" {
+			t.Errorf("unexpected module %q", m.Path)
+			continue
+		}
+		if versions[m.Version] {
+			t.Errorf("duplicate entry for esbuild@%s", m.Version)
+		}
+		versions[m.Version] = true
+	}
+	// 0.25.9 appears twice and must collapse; three distinct versions remain.
+	want := []string{"0.27.7", "0.25.9", "0.27.3"}
+	if len(versions) != len(want) {
+		t.Fatalf("got %d distinct versions %v, want %d", len(versions), versions, len(want))
+	}
+	for _, v := range want {
+		if !versions[v] {
+			t.Errorf("lost esbuild@%s", v)
+		}
+	}
+	// The hoisted copy must sort first, so parseNPMUnit resolves direct
+	// dependencies to it.
+	if mods[0].Version != "0.27.7" {
+		t.Errorf("first entry = %s, want the hoisted 0.27.7", mods[0].Version)
+	}
+}
+
 // npm installs the same package at several depths with different versions.
 // Only one is reported, and which one must not depend on map iteration order,
 // or identical scans produce different output and SARIF results flap.
@@ -257,17 +308,19 @@ func TestParsePackageLockDeterministic(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFile(t, dir, "package-lock.json", multiDepth)
 
-	// The hoisted top-level install must win, every run.
+	// All three versions survive (deprecation is per-version), but the
+	// hoisted copy must sort first every run so parseNPMUnit resolves
+	// direct dependencies to it.
 	for i := 0; i < 25; i++ {
 		mods, err := parsePackageLock(path)
 		if err != nil {
 			t.Fatalf("parsePackageLock: %v", err)
 		}
-		if len(mods) != 1 {
-			t.Fatalf("run %d: got %d modules, want 1", i, len(mods))
+		if len(mods) != 3 {
+			t.Fatalf("run %d: got %d modules, want 3 distinct versions", i, len(mods))
 		}
 		if mods[0].Version != "4.17.21" {
-			t.Fatalf("run %d: lodash = %s, want 4.17.21 (the hoisted copy)", i, mods[0].Version)
+			t.Fatalf("run %d: first entry = %s, want the hoisted 4.17.21", i, mods[0].Version)
 		}
 	}
 }
@@ -322,12 +375,17 @@ func TestParsePackageLockV1Deterministic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parsePackageLock: %v", err)
 		}
-		byPath := map[string]Module{}
+		// Both versions survive; the top-level one must come first, since
+		// parseNPMUnit takes the first occurrence as the resolved version.
+		var firstLodash string
 		for _, m := range mods {
-			byPath[m.Path] = m
+			if m.Path == "lodash" {
+				firstLodash = m.Version
+				break
+			}
 		}
-		if byPath["lodash"].Version != "4.17.21" {
-			t.Fatalf("run %d: lodash = %s, want 4.17.21 (top level)", i, byPath["lodash"].Version)
+		if firstLodash != "4.17.21" {
+			t.Fatalf("run %d: first lodash = %s, want 4.17.21 (top level)", i, firstLodash)
 		}
 	}
 }
