@@ -616,3 +616,109 @@ func TestSplitNameVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestParseNPMUnitWithLockfile(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "package.json", testPackageJSON)
+	writeFile(t, dir, "package-lock.json", testPackageLockV3)
+
+	res, err := parseNPMUnit(dir)
+	if err != nil {
+		t.Fatalf("parseNPMUnit: %v", err)
+	}
+	if res == nil {
+		t.Fatal("got nil result")
+	}
+	if res.Name != "my-app" {
+		t.Errorf("Name = %q, want my-app", res.Name)
+	}
+	if res.Primary != "package.json" {
+		t.Errorf("Primary = %q, want package.json", res.Primary)
+	}
+	if res.Unlocked {
+		t.Error("Unlocked = true, want false")
+	}
+
+	byPath := map[string]Module{}
+	for _, m := range res.Modules {
+		byPath[m.Path] = m
+	}
+
+	// Direct: resolved version from the lockfile, line from package.json.
+	x := byPath["xterm"]
+	if !x.Direct {
+		t.Error("xterm: Direct = false, want true")
+	}
+	if x.Version != "5.3.0" {
+		t.Errorf("xterm: Version = %q, want 5.3.0 (resolved)", x.Version)
+	}
+	if x.LineFile != "package.json" || x.Line != 5 {
+		t.Errorf("xterm: anchor = %s:%d, want package.json:5", x.LineFile, x.Line)
+	}
+
+	// Indirect: lockfile-only package keeps its lockfile anchor.
+	inf := byPath["inflight"]
+	if inf.Direct {
+		t.Error("inflight: Direct = true, want false")
+	}
+	if inf.LineFile != "package-lock.json" || inf.Line != 15 {
+		t.Errorf("inflight: anchor = %s:%d, want package-lock.json:15", inf.LineFile, inf.Line)
+	}
+
+	// A direct dep absent from the lockfile keeps its declared range.
+	if got := byPath["typescript"].Version; got != "^5.0.0" {
+		t.Errorf("typescript: Version = %q, want ^5.0.0", got)
+	}
+}
+
+func TestParseNPMUnitUnlocked(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "package.json", testPackageJSON)
+
+	res, err := parseNPMUnit(dir)
+	if err != nil {
+		t.Fatalf("parseNPMUnit: %v", err)
+	}
+	if !res.Unlocked {
+		t.Error("Unlocked = false, want true")
+	}
+	if len(res.Files) != 1 || res.Files[0] != "package.json" {
+		t.Errorf("Files = %v, want [package.json]", res.Files)
+	}
+	for _, m := range res.Modules {
+		if m.LineFile != "package.json" {
+			t.Errorf("%s: LineFile = %q, want package.json", m.Path, m.LineFile)
+		}
+	}
+}
+
+func TestParseNPMUnitPrefersBunLock(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "package.json", testPackageJSON)
+	writeFile(t, dir, "package-lock.json", testPackageLockV3)
+	writeFile(t, dir, "bun.lock", testBunLock)
+
+	res, err := parseNPMUnit(dir)
+	if err != nil {
+		t.Fatalf("parseNPMUnit: %v", err)
+	}
+	if len(res.Files) != 2 || res.Files[1] != "bun.lock" {
+		t.Errorf("Files = %v, want [package.json bun.lock]", res.Files)
+	}
+	for _, m := range res.Modules {
+		if m.LineFile == "package-lock.json" {
+			t.Errorf("%s anchored to package-lock.json, want bun.lock ignored", m.Path)
+		}
+	}
+}
+
+func TestParseNPMUnitNoPackageJSON(t *testing.T) {
+	dir := t.TempDir()
+	res, err := parseNPMUnit(dir)
+	if err != nil {
+		t.Fatalf("parseNPMUnit: %v", err)
+	}
+	if res != nil {
+		t.Errorf("got %+v, want nil for a directory with no package.json", res)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -444,4 +445,119 @@ func parseBunLock(path string) ([]Module, error) {
 	// insertion order is shallowest-install-first, which parseNPMUnit relies on.
 	sort.SliceStable(mods, func(i, j int) bool { return mods[i].Path < mods[j].Path })
 	return mods, nil
+}
+
+// ParseResult is one manifest unit's parsed contents. A unit is one primary
+// manifest plus any companion files: go.mod alone, or package.json plus at
+// most one lockfile.
+type ParseResult struct {
+	Name     string   // go.mod module path, or package.json "name"
+	Primary  string   // base name of the primary manifest
+	Files    []string // base names actually read, in read order
+	Modules  []Module
+	Unlocked bool // npm only: no lockfile, versions come from dist-tags.latest
+}
+
+// parseNPMUnit assembles one npm manifest unit from dir. It returns
+// (nil, nil) when dir holds no package.json.
+//
+// package.json defines which packages are direct. A lockfile, when present,
+// supplies resolved versions and contributes the transitive packages. Direct
+// packages keep their package.json line so the user is sent to the file they
+// would actually edit; transitive packages anchor to the lockfile, the only
+// file that mentions them.
+func parseNPMUnit(dir string) (*ParseResult, error) {
+	pkgPath := filepath.Join(dir, "package.json")
+	if _, err := os.Stat(pkgPath); err != nil {
+		return nil, nil //nolint:nilnil // no package.json means no npm unit here
+	}
+
+	name, directMods, err := parsePackageJSON(pkgPath)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &ParseResult{
+		Name:    name,
+		Primary: "package.json",
+		Files:   []string{"package.json"},
+	}
+
+	lockName, lockMods := loadNPMLockfile(dir)
+	if lockName == "" {
+		res.Unlocked = true
+		res.Modules = directMods
+		return res, nil
+	}
+	res.Files = append(res.Files, lockName)
+
+	// First occurrence wins. The lockfile parsers emit shallowest-install
+	// first and sort stably, so the first entry for a name is the hoisted
+	// copy — the version a direct dependency actually resolves to. Taking
+	// the last would pick an arbitrary nested version instead.
+	resolved := make(map[string]string, len(lockMods))
+	for _, m := range lockMods {
+		if _, ok := resolved[m.Path]; !ok {
+			resolved[m.Path] = m.Version
+		}
+	}
+
+	direct := make(map[string]bool, len(directMods))
+	for i := range directMods {
+		direct[directMods[i].Path] = true
+		if v, ok := resolved[directMods[i].Path]; ok && v != "" {
+			directMods[i].Version = v
+		}
+	}
+
+	mods := directMods
+	for _, m := range lockMods {
+		if direct[m.Path] {
+			continue // already present, anchored to package.json
+		}
+		mods = append(mods, m)
+	}
+	// Stable: ties on Path are real (one package at several versions), and
+	// insertion order is shallowest-install-first, which parseNPMUnit relies on.
+	sort.SliceStable(mods, func(i, j int) bool { return mods[i].Path < mods[j].Path })
+	res.Modules = mods
+	return res, nil
+}
+
+// loadNPMLockfile picks and parses the lockfile beside package.json. bun.lock
+// wins when both are present, since a repo carrying both is normally a bun
+// repo with a stale npm lockfile. A lockfile that fails to parse degrades to
+// the unlocked path rather than failing the scan.
+func loadNPMLockfile(dir string) (string, []Module) {
+	bunPath := filepath.Join(dir, "bun.lock")
+	npmPath := filepath.Join(dir, "package-lock.json")
+
+	_, bunErr := os.Stat(bunPath)
+	_, npmErr := os.Stat(npmPath)
+	hasBun, hasNPM := bunErr == nil, npmErr == nil
+
+	if hasBun && hasNPM {
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: %s has both bun.lock and package-lock.json; using bun.lock\n", dir)
+	}
+	if !hasBun && !hasNPM {
+		if _, err := os.Stat(filepath.Join(dir, "bun.lockb")); err == nil {
+			_, _ = fmt.Fprintf(os.Stderr,
+				"Warning: %s has a binary bun.lockb, which modrot cannot read; run 'bun install --save-text-lockfile' to generate bun.lock\n", dir)
+		}
+		return "", nil
+	}
+
+	name, path := "bun.lock", bunPath
+	parse := parseBunLock
+	if !hasBun {
+		name, path = "package-lock.json", npmPath
+		parse = parsePackageLock
+	}
+
+	mods, err := parse(path)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: could not parse %s: %v; falling back to package.json alone\n", name, err)
+		return "", nil
+	}
+	return name, mods
 }
