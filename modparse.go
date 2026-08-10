@@ -14,16 +14,16 @@ type Module struct {
 	Path          string // full module path, e.g. "github.com/foo/bar/v2"
 	Version       string
 	Direct        bool
-	Line          int    // 1-based require line in the source manifest (0 if unknown)
-	LineFile      string // base name of the file Line refers to (go.mod, package.json, bun.lock)
-	Ecosystem     string // "go" or "npm"
-	Owner         string // GitHub owner (empty if non-GitHub)
-	Repo          string // GitHub repo name (empty if non-GitHub)
-	Deprecated    string // deprecation message from go.mod, empty if not deprecated
-	LatestVersion string // latest version from proxy (empty if unavailable)
+	Line          int       // 1-based require line in the source manifest (0 if unknown)
+	LineFile      string    // base name of the file Line refers to (go.mod, package.json, bun.lock)
+	Ecosystem     string    // "go" or "npm"
+	Owner         string    // GitHub owner (empty if non-GitHub)
+	Repo          string    // GitHub repo name (empty if non-GitHub)
+	Deprecated    string    // deprecation message from go.mod, empty if not deprecated
+	LatestVersion string    // latest version from proxy (empty if unavailable)
 	VersionTime   time.Time // publish time of current version from proxy
 	LatestTime    time.Time // publish time of latest version from proxy
-	SourceURL     string // VCS URL from proxy Origin.URL
+	SourceURL     string    // VCS URL from proxy Origin.URL
 }
 
 // ParseGoMod reads and parses a go.mod file, returning all required modules.
