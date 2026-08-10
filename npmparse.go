@@ -264,12 +264,13 @@ func parsePackageLock(path string) ([]Module, error) {
 		})
 	}
 
-	// Iteration order below is deliberate and load-bearing. npm can install
-	// the same package at several depths with different versions, and only
-	// the first one seen is reported. Ranging over a Go map would pick a
-	// different one on every run, making modrot's output — and its SARIF
-	// results — vary between identical scans. Shallowest install wins, which
-	// is the hoisted copy the project actually resolves to.
+	// Iteration order below is deliberate and load-bearing. npm installs the
+	// same package at several depths, and every distinct version is reported
+	// — only exact (name, version) duplicates collapse. Ranging over a Go map
+	// would vary which copy a survivor takes its line from, and which version
+	// lands first, making modrot's output and its SARIF results differ
+	// between identical scans. Shallowest install first, so the entry
+	// parseNPMUnit resolves a direct dependency to is the hoisted copy.
 	if len(pl.Packages) > 0 {
 		// v2 and v3: the flat "packages" map is authoritative.
 		keys := make([]string, 0, len(pl.Packages))
