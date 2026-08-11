@@ -223,3 +223,37 @@ func TestEnrichUnitsDeduplicatesAcrossUnits(t *testing.T) {
 		}
 	}
 }
+
+func TestUnitHeader(t *testing.T) {
+	cfg := NewDefaultConfig()
+	cfg.GoToolchain = "go1.24.5"
+
+	tests := []struct {
+		name string
+		mi   manifestInfo
+		want string
+	}{
+		{
+			"go",
+			manifestInfo{eco: goEcosystem, relPath: "go.mod", moduleName: "github.com/foo/bar"},
+			"go.mod — github.com/foo/bar (go1.24.5)",
+		},
+		{
+			"npm locked",
+			manifestInfo{eco: npmEcosystem, relPath: "package.json", moduleName: "my-app"},
+			"package.json — my-app (npm)",
+		},
+		{
+			"npm unlocked",
+			manifestInfo{eco: npmEcosystem, relPath: "web/package.json", moduleName: "my-app", unlocked: true},
+			"web/package.json — my-app (npm, unlocked)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := unitHeader(tt.mi, cfg); got != tt.want {
+				t.Errorf("got  %q\nwant %q", got, tt.want)
+			}
+		})
+	}
+}

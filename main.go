@@ -311,7 +311,9 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 	if relErr != nil {
 		relPath = mi.manifestPath
 	}
-	_, _ = fmt.Fprintf(os.Stderr, "=== %s — %s (%s) ===\n", relPath, mi.moduleName, goToolchainVersion())
+	mi.relPath = relPath
+	_, _ = fmt.Fprintf(os.Stderr, "=== %s ===\n", unitHeader(mi, cfg))
+	warnUnsupported(mi, cfg)
 
 	// Filter to GitHub modules and deduplicate
 	githubModules, nonGitHubModules := FilterGitHub(mi.allModules, cfg.DirectOnly)
@@ -322,7 +324,7 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 	}
 
 	// Enrich all modules with version data (skips already-enriched)
-	if cfg.Freshness || cfg.Age.Enabled {
+	if (cfg.Freshness || cfg.Age.Enabled) && mi.eco.Name == "go" {
 		EnrichFreshness(mi.allModules, 20)
 	}
 
@@ -370,8 +372,8 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 	stale := filterStale(cfg, results)
 
 	// Handle --tree mode
-	if cfg.Tree && hasArchived {
-		graph, graphErr := parseModGraph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
+	if cfg.Tree && hasArchived && mi.eco.Graph != nil {
+		graph, graphErr := mi.eco.Graph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
 		if graphErr != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", graphErr)
 		} else {
