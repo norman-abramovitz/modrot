@@ -274,10 +274,9 @@ func runSingleModule(cfg *Config, inputPath string) int {
 		dir = filepath.Dir(dir)
 	}
 
-	units := buildManifestInfos([]string{dir}, dir)
+	units, failed := buildManifestInfos([]string{dir}, dir)
 	if len(units) == 0 {
-		_, _ = fmt.Fprintf(os.Stderr, "No go.mod or package.json found in %s\n", dir)
-		return 2
+		return reportNoUnits(dir, failed)
 	}
 
 	enrichUnits(units, cfg)

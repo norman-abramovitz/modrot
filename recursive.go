@@ -96,10 +96,9 @@ func runRecursive(rootDir string, cfg *Config) int {
 		return 2
 	}
 
-	modules := buildManifestInfos(dirs, rootDir)
+	modules, failed := buildManifestInfos(dirs, rootDir)
 	if len(modules) == 0 {
-		_, _ = fmt.Fprintf(os.Stderr, "No valid manifests found.\n")
-		return 2
+		return reportNoUnits(rootDir, failed)
 	}
 	enrichUnits(modules, cfg)
 

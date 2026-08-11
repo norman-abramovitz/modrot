@@ -120,13 +120,21 @@ func findUnitDirs(root string) ([]string, error) {
 
 // buildManifestInfos parses every unit in the given directories, in ecosystem
 // order within each directory. Units that fail to parse are reported and
-// skipped rather than aborting the scan.
-func buildManifestInfos(dirs []string, rootDir string) []manifestInfo {
+// skipped rather than aborting the scan, so one corrupt manifest cannot kill
+// a whole monorepo scan.
+//
+// The second return value counts manifests that were found but could not be
+// parsed. Callers need it to tell "there is nothing here" apart from "there
+// is something here and it is broken" — reporting the former for the latter
+// tells the user a file they are looking at does not exist.
+func buildManifestInfos(dirs []string, rootDir string) ([]manifestInfo, int) {
 	var units []manifestInfo
+	failed := 0
 	for _, dir := range dirs {
 		for _, eco := range discoverUnits(dir) {
 			res, err := eco.Parse(dir)
 			if err != nil {
+				failed++
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: skipping %s in %s: %v\n",
 					primaryManifest(eco), dir, err)
 				continue
@@ -150,7 +158,20 @@ func buildManifestInfos(dirs []string, rootDir string) []manifestInfo {
 			})
 		}
 	}
-	return units
+	return units, failed
+}
+
+// reportNoUnits explains an empty scan. A manifest that exists but failed to
+// parse must not be reported as a missing manifest.
+func reportNoUnits(dir string, failed int) int {
+	if failed > 0 {
+		_, _ = fmt.Fprintf(os.Stderr,
+			"Error: no manifest in %s could be parsed (%d %s failed)\n",
+			dir, failed, pluralize(failed, "manifest", "manifests"))
+	} else {
+		_, _ = fmt.Fprintf(os.Stderr, "No go.mod or package.json found in %s\n", dir)
+	}
+	return 2
 }
 
 // depKey identifies a dependency for deduplication across manifests.

@@ -118,7 +118,10 @@ func TestBuildManifestInfos(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	units := buildManifestInfos([]string{root}, root)
+	units, failed := buildManifestInfos([]string{root}, root)
+	if failed != 0 {
+		t.Fatalf("got %d parse failures, want 0", failed)
+	}
 	if len(units) != 2 {
 		t.Fatalf("got %d units, want 2", len(units))
 	}
@@ -136,6 +139,22 @@ func TestBuildManifestInfos(t *testing.T) {
 	}
 	if units[1].relPath != "package.json" {
 		t.Errorf("npm relPath = %q, want package.json", units[1].relPath)
+	}
+}
+
+// A manifest that exists but cannot be parsed must not be reported as a
+// missing manifest — that sends the user looking for the wrong problem.
+func TestBuildManifestInfosCountsParseFailures(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module \x00bad\nrequire (\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	units, failed := buildManifestInfos([]string{dir}, dir)
+	if len(units) != 0 {
+		t.Errorf("got %d units, want 0", len(units))
+	}
+	if failed != 1 {
+		t.Errorf("got %d parse failures, want 1", failed)
 	}
 }
 
