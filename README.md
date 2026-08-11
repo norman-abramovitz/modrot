@@ -1,10 +1,10 @@
 # modrot
 
-Detect archived GitHub dependencies in Go projects.
+Detect archived GitHub dependencies and deprecated packages in Go, npm, and Bun projects.
 
-Parses your `go.mod`, queries the GitHub GraphQL API in batches, and reports which dependencies have been archived upstream.
+Parses your `go.mod` or `package.json`/lockfile, queries the GitHub GraphQL API in batches, and reports which dependencies have been archived upstream. A directory holding both `go.mod` and `package.json` is scanned as one unit — see [Go, npm, and Bun support](#go-npm-and-bun-support) below.
 
-Archived dependencies no longer receive security patches, bug fixes, or compatibility updates. They can silently become liabilities — vulnerable to known exploits, incompatible with newer Go versions, or abandoned without a migration path. The sooner you know, the more options you have.
+Archived dependencies no longer receive security patches, bug fixes, or compatibility updates. They can silently become liabilities — vulnerable to known exploits, incompatible with newer toolchains, or abandoned without a migration path. The sooner you know, the more options you have.
 
 ## Install
 
@@ -36,13 +36,15 @@ go build -o modrot .
 - [GitHub CLI](https://cli.github.com/) (`gh`) installed and authenticated — used to obtain your GitHub API token. After installing, run `gh auth login` to authenticate.
 - [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) — required only for `--files` flag
 
+npm and Bun scanning need no extra tool — modrot talks to `registry.npmjs.org` directly.
+
 ## Usage
 
 ```
-modrot [flags] [path/to/go.mod | path/to/dir]
+modrot [flags] [path/to/go.mod | path/to/package.json | path/to/dir]
 ```
 
-If no path is given, looks for `go.mod` in the current directory. You can also pass a directory path and the tool will look for `go.mod` inside it. Flags can appear before or after the path.
+If no path is given, looks in the current directory for `go.mod` and/or `package.json`. You can also pass a directory path and the tool will look for manifests inside it. Flags can appear before or after the path.
 
 ### Flags
 
@@ -53,9 +55,11 @@ If no path is given, looks for `go.mod` in the current directory. You can also p
 | `--format FORMAT` | Output format: `table` (default), `json`, `markdown`, `mermaid`, `quickfix`, `sarif` |
 | `--json` | Output as JSON (alias for `--format=json`) |
 | `--markdown` | Output as GitHub-Flavored Markdown (alias for `--format=markdown`) |
-| `--mermaid` | Output Mermaid flowchart diagram (alias for `--format=mermaid`) |
+| `--mermaid` | Output Mermaid flowchart diagram (alias for `--format=mermaid`) — Go only, see below |
 | `--quickfix` | Output `file:line:module` for editor quickfix (alias for `--format=quickfix`) |
 | `--sarif` | Output SARIF 2.1.0 for GitHub code scanning (alias for `--format=sarif`) |
+
+All six formats work for both Go and npm/Bun units.
 
 **Filtering:**
 
@@ -66,24 +70,24 @@ If no path is given, looks for `go.mod` in the current directory. You can also p
 | `--ignore MODULES` | Comma-separated list of module paths to ignore |
 | `--show-ignored` | Show ignored modules and their current state |
 | `--no-ignore` | Disable ignore lists (`.modrotignore` and `--ignore`) |
-| `--stale[=THRESHOLD]` | Show dependencies not pushed in >THRESHOLD (default: `2y`, e.g. `1y6m`, `180d`) |
+| `--stale[=THRESHOLD]` | Show dependencies not pushed in >THRESHOLD (default: `2y`, e.g. `1y6m`, `180d`) — works for npm too, it reads GitHub `pushedAt`, not registry data |
 
 **Analysis:**
 
 | Flag | Description |
 |------|-------------|
-| `--resolve` | Resolve vanity import paths to GitHub repos (e.g. `google.golang.org/grpc` → `github.com/grpc/grpc-go`) |
-| `--deprecated` | Check for deprecated modules via the Go module proxy |
+| `--resolve` | Resolve vanity import paths to GitHub repos (e.g. `google.golang.org/grpc` → `github.com/grpc/grpc-go`) — Go only; npm always resolves via each package's `repository` field |
+| `--deprecated` | Check for deprecated modules — via the Go module proxy for Go, via the npm registry for npm/Bun |
 | `--duration[=DATE]` | Show how long dependencies have been archived (default: today) |
-| `--freshness` | Show latest available version and how far behind each dependency is (LATEST + BEHIND columns) |
-| `--age[=THRESHOLD]` | Show how old each version is (AGE column); with threshold, show OUTDATED section (e.g. `18m`, `1y6m`) |
+| `--freshness` | Show latest available version and how far behind each dependency is (LATEST + BEHIND columns) — Go only, warns and skips npm units |
+| `--age[=THRESHOLD]` | Show how old each version is (AGE column); with threshold, show OUTDATED section (e.g. `18m`, `1y6m`) — Go only, warns and skips npm units |
 
 **Display:**
 
 | Flag | Description |
 |------|-------------|
 | `--all` | Show all modules, not just archived ones |
-| `--tree` | Show ASCII dependency tree for archived modules (uses `go mod graph`) |
+| `--tree` | Show ASCII dependency tree for archived modules (uses `go mod graph`) — Go only, warns and falls back to flat output for npm units |
 | `--files` | Show source files that import archived modules (requires `rg`) |
 | `--sort ORDER` | Sort: `name` (default asc), `duration` (default desc), `pushed` (default desc); append `:asc` or `:desc` to override |
 | `--time` | Include time in date output (2006-01-02 15:04:05 instead of 2006-01-02) |
@@ -94,7 +98,7 @@ If no path is given, looks for `go.mod` in the current directory. You can also p
 |------|-------------|
 | `--workers N` | Repos per GitHub GraphQL batch request (default 50) |
 | `--go-version V` | Override the Go toolchain version from go.mod (e.g. `1.21.0`) |
-| `--recursive` | Scan all go.mod files in the directory tree |
+| `--recursive` | Scan all go.mod and package.json/lockfile units in the directory tree |
 | `--no-color` | Disable colored output (also respects `NO_COLOR` env var) |
 | `--color-threshold T1,..,TN` | Age thresholds for color levels, 2–4 values (default: `3m,1y,2y,5y`) |
 
@@ -499,9 +503,61 @@ Override the Go toolchain version used for `go mod graph` with `--go-version`:
 $ modrot --tree --go-version 1.21.0
 ```
 
+### Go, npm, and Bun support
+
+modrot scans Go, npm, and Bun dependencies in the same run. A directory holding a `go.mod` is a Go unit; a directory holding a `package.json` is an npm/Bun unit. A directory with both reports both, as two units under one exit code — a repo with only a `go.mod` is scanned exactly as before, unaffected by any of this.
+
+**Manifests read:** `package.json` for the dependency list, plus a lockfile for exact versions: `package-lock.json` (npm, lockfile versions 1, 2, and 3) or `bun.lock` (Bun's JSONC-ish text lockfile). `yarn.lock` is not read. The older binary `bun.lockb` format is not read either — modrot warns and suggests running `bun install --save-text-lockfile` to produce a `bun.lock` it can parse.
+
+If a package.json directory has both a `package-lock.json` and a `bun.lock`, modrot prefers `bun.lock` and warns that the npm lockfile was ignored, so a repo mid-migration between package managers gets a predictable, single-lockfile answer instead of a silently merged one.
+
+With no lockfile at all, modrot falls back to resolving each dependency's version against the npm registry's `dist-tags.latest` — the header for that unit reads `(npm, unlocked)` and a note explains the fallback. This is inherently less precise than a lockfile: it reports what installing today would get you, not what's actually pinned.
+
+Every distinct version of a package that appears across your manifests is reported, not just one — npm's dependency resolution genuinely installs multiple versions of the same package side by side, and a deprecation notice is a fact about one specific version, not the package as a whole.
+
+**What's Go-only in this release:** `--tree`, `--mermaid`, `--freshness`, and `--age` all warn and either fall back to flat output or skip the npm unit entirely — building a tree needs a dependency graph source, and npm has none wired up yet; freshness and age need the full npm packument, which isn't fetched. `--stale` does work for npm, since it reads GitHub's `pushedAt` on the resolved repo rather than anything registry-specific. `--direct-only`, `--sort`, `--stats`, `.modrotignore`, and all six output formats (table, JSON, Markdown, Mermaid's non-tree paths, quickfix, SARIF) work the same for both ecosystems.
+
+If the npm registry can't be reached for some packages, modrot warns that results are incomplete rather than silently reporting a false all-clear.
+
+A worked example against a small mixed repo — one Go module and one npm package with three deprecated dependencies, one of them (`circular-json`) also archived on GitHub:
+
+```console
+$ modrot --recursive --deprecated .
+Resolved 2 npm dependencies to GitHub repos.
+Found 3 deprecated npm packages.
+Found 2 manifests, checking 4 unique GitHub repos...
+=== go.mod — example.com/mixed (go1.26.5) ===
+
+ARCHIVED DEPENDENCIES (1 of 2 github.com modules)
+
+MODULE                       VERSION              DIRECT  ARCHIVED AT  LAST PUSHED
+github.com/dgrijalva/jwt-go  v3.2.0+incompatible  direct  2022-05-21   2021-11-04
+
+=== web/package.json — mixed-web (npm) ===
+
+ARCHIVED DEPENDENCIES (1 of 2 github.com modules)
+
+MODULE         VERSION  DIRECT  ARCHIVED AT  LAST PUSHED
+circular-json  0.5.9    direct  2019-10-23   2019-05-27
+
+DEPRECATED MODULES (3 modules)
+
+MODULE         VERSION  DIRECT  MESSAGE
+circular-json  0.5.9    direct  CircularJSON is in maintenance only, flatted is its successor.
+left-pad       1.3.0    direct  use String.prototype.padStart()
+xterm          5.3.0    direct  This package is now deprecated. Move to @xterm/xterm instead.
+
+NON-GITHUB MODULES (1 non-GitHub module)
+
+MODULE    VERSION  LATEST  DIRECT  PUBLISHED  SOURCE
+left-pad  1.3.0                    direct
+```
+
+Note the two `===` headers: one Go unit qualified by toolchain version, one npm unit qualified by `(npm)`. `left-pad` has no `repository` field modrot can resolve, so it lands in NON-GITHUB MODULES like an unresolvable Go module would.
+
 ### Multi-module repos
 
-`--recursive` discovers all `go.mod` files in a directory tree, queries GitHub once for all unique repos, and outputs per-module results:
+`--recursive` discovers all `go.mod` and `package.json`/lockfile units in a directory tree, queries GitHub once for all unique repos, and outputs per-unit results:
 
 ```
 $ modrot --recursive --direct-only /path/to/project
@@ -662,9 +718,7 @@ This triggers a GitHub Actions workflow that:
 5. Batches repos into GitHub GraphQL queries (~50 per request) checking `isArchived`, `archivedAt`, and `pushedAt`
 6. Non-GitHub modules that couldn't be resolved are skipped with a summary count
 
-## Attribution
-
-This project was built with the assistance of [Claude](https://claude.ai), an AI assistant by [Anthropic](https://www.anthropic.com).
+npm and Bun units follow the same shape: parse `package.json` plus `bun.lock` or `package-lock.json` (falling back to the registry's `dist-tags.latest` with no lockfile), resolve each dependency's GitHub repo from its `repository` field, query the npm registry for deprecation notices, then join the same GitHub archive check and reporting pipeline used for Go.
 
 ## License
 
