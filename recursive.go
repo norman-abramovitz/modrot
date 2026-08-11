@@ -61,6 +61,19 @@ func sarifManifestDir(cwd, manifestPath string) string {
 	return filepath.ToSlash(dir)
 }
 
+// goOnlyUnits returns the Go units of a scan. The returned manifestInfo values
+// are copies, but their module slices share backing arrays with the originals,
+// so the enrichment passes still write through to the caller's units.
+func goOnlyUnits(units []manifestInfo) []manifestInfo {
+	var goUnits []manifestInfo
+	for i := range units {
+		if units[i].eco.Name == "go" {
+			goUnits = append(goUnits, units[i])
+		}
+	}
+	return goUnits
+}
+
 // getDeprecatedModules returns modules with non-empty Deprecated field,
 // respecting the directOnly filter. Returns nil if deprecatedMode is false.
 func getDeprecatedModules(allModules []Module, directOnly bool, deprecatedMode bool) []Module {
@@ -134,20 +147,17 @@ func checkUnitsOnGitHub(units []manifestInfo, cfg *Config) (map[string]RepoStatu
 		}
 	}
 
-	// Enrich non-GitHub modules with proxy data
-	enrichAcrossModules(units)
+	// Enrich non-GitHub modules with proxy data. Only Go units: the Go module
+	// proxy knows nothing about npm package names, so every npm lookup would
+	// miss and then overwrite the SourceURL the npm registry already gave us —
+	// while costing one request per package.
+	enrichAcrossModules(goOnlyUnits(units))
 
 	// Enrich all modules with freshness data (skips already-enriched).
 	// npm has no equivalent of the Go module proxy's freshness endpoints, so
 	// npm units are excluded rather than passed through.
 	if cfg.Freshness {
-		var goUnits []manifestInfo
-		for i := range units {
-			if units[i].eco.Name == "go" {
-				goUnits = append(goUnits, units[i])
-			}
-		}
-		enrichFreshnessAcrossModules(goUnits)
+		enrichFreshnessAcrossModules(goOnlyUnits(units))
 	}
 
 	if len(allGitHub) == 0 {
