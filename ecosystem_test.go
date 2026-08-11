@@ -142,6 +142,42 @@ func TestBuildManifestInfos(t *testing.T) {
 	}
 }
 
+// Unit order is user-visible: it drives text output, --json modules[] and
+// --sarif results[], where the first location anchors a code-scanning alert.
+// WalkDir hands back a directory before its entries, so discovery order puts
+// the root first; buildManifestInfos must sort back to path order.
+func TestBuildManifestInfosSortsByPath(t *testing.T) {
+	root := t.TempDir()
+	rels := []string{".", "api", "api/auth", "zlib"}
+	// Feed the dirs in WalkDir order (root before its entries), which is the
+	// order that used to leak into the output.
+	dirs := make([]string, 0, len(rels))
+	for _, rel := range rels {
+		d := filepath.Join(root, rel)
+		if err := os.MkdirAll(d, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "go.mod"), []byte(testGoMod), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		dirs = append(dirs, d)
+	}
+
+	units, failed := buildManifestInfos(dirs, root)
+	if failed != 0 {
+		t.Fatalf("got %d parse failures, want 0", failed)
+	}
+	want := []string{"api/auth/go.mod", "api/go.mod", "go.mod", "zlib/go.mod"}
+	if len(units) != len(want) {
+		t.Fatalf("got %d units, want %d", len(units), len(want))
+	}
+	for i, w := range want {
+		if got := filepath.ToSlash(units[i].relPath); got != w {
+			t.Errorf("units[%d] = %q, want %q", i, got, w)
+		}
+	}
+}
+
 // A manifest that exists but cannot be parsed must not be reported as a
 // missing manifest — that sends the user looking for the wrong problem.
 func TestBuildManifestInfosCountsParseFailures(t *testing.T) {
