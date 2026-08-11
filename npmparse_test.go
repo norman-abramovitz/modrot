@@ -390,6 +390,52 @@ func TestParsePackageLockV1Deterministic(t *testing.T) {
 	}
 }
 
+// The v1 breadth-first frontier must be keyed on (name, version), not on name
+// alone. npm nests a second copy of a package under whichever parent needs a
+// different version; collapsing the frontier by name drops that version and,
+// worse, everything reachable only through it.
+func TestParsePackageLockV1KeepsBothVersionsAndTheirSubtrees(t *testing.T) {
+	const v1TwoParents = `{
+  "lockfileVersion": 1,
+  "dependencies": {
+    "a": {
+      "version": "1.0.0",
+      "dependencies": { "circular-json": { "version": "0.5.9" } }
+    },
+    "b": {
+      "version": "1.0.0",
+      "dependencies": {
+        "circular-json": {
+          "version": "0.5.4",
+          "dependencies": { "left-pad": { "version": "1.3.0" } }
+        }
+      }
+    }
+  }
+}
+`
+	dir := t.TempDir()
+	path := writeFile(t, dir, "package-lock.json", v1TwoParents)
+
+	mods, err := parsePackageLock(path)
+	if err != nil {
+		t.Fatalf("parsePackageLock: %v", err)
+	}
+	got := map[string]bool{}
+	for _, m := range mods {
+		got[m.Path+"@"+m.Version] = true
+	}
+	for _, want := range []string{
+		"circular-json@0.5.9",
+		"circular-json@0.5.4",
+		"left-pad@1.3.0",
+	} {
+		if !got[want] {
+			t.Errorf("missing %s; got %v", want, got)
+		}
+	}
+}
+
 const testPackageLockV1 = `{
   "name": "old-app",
   "lockfileVersion": 1,

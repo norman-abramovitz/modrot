@@ -296,26 +296,40 @@ func parsePackageLock(path string) ([]Module, error) {
 		// v1: walk the nested "dependencies" tree breadth-first, so every
 		// top-level entry is recorded before any nested one. Only top-level
 		// entries have a cheaply recoverable line.
-		level := pl.Dependencies
+		//
+		// The frontier is keyed on (name, version), not name alone: npm nests
+		// a second copy of a package under the parent that needs a different
+		// version, so collapsing the frontier by name would drop that version
+		// and — worse — everything reachable only through it.
+		level := map[nameVersion]packageLockDep{}
+		for name, dep := range pl.Dependencies {
+			level[nameVersion{name, dep.Version}] = dep
+		}
 		topLevel := true
 		for len(level) > 0 {
-			names := make([]string, 0, len(level))
-			for name := range level {
-				names = append(names, name)
+			keys := make([]nameVersion, 0, len(level))
+			for nv := range level {
+				keys = append(keys, nv)
 			}
-			sort.Strings(names)
+			sort.Slice(keys, func(i, j int) bool {
+				if keys[i].name != keys[j].name {
+					return keys[i].name < keys[j].name
+				}
+				return keys[i].version < keys[j].version
+			})
 
-			next := map[string]packageLockDep{}
-			for _, name := range names {
-				dep := level[name]
+			next := map[nameVersion]packageLockDep{}
+			for _, nv := range keys {
+				dep := level[nv]
 				line := 0
 				if topLevel {
-					line = lines["dependencies"][name]
+					line = lines["dependencies"][nv.name]
 				}
-				addMod(name, dep.Version, line)
+				addMod(nv.name, dep.Version, line)
 				for childName, child := range dep.Dependencies {
-					if _, exists := next[childName]; !exists {
-						next[childName] = child
+					childKey := nameVersion{childName, child.Version}
+					if _, exists := next[childKey]; !exists {
+						next[childKey] = child
 					}
 				}
 			}
