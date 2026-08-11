@@ -550,10 +550,10 @@ xterm          5.3.0    direct  This package is now deprecated. Move to @xterm/x
 NON-GITHUB MODULES (1 non-GitHub module)
 
 MODULE    VERSION  LATEST  DIRECT  PUBLISHED  SOURCE
-left-pad  1.3.0                    direct
+left-pad  1.3.0            direct             git+ssh://git@github.com/stevemao/left-pad.git
 ```
 
-Note the two `===` headers: one Go unit qualified by toolchain version, one npm unit qualified by `(npm)`. `left-pad` has no `repository` field modrot can resolve, so it lands in NON-GITHUB MODULES like an unresolvable Go module would.
+Note the two `===` headers: one Go unit qualified by toolchain version, one npm unit qualified by `(npm)`. `left-pad` resolves to a repository, but its `git+ssh://` URL form is not parsed into an owner and repo pair, so it lands in NON-GITHUB MODULES — the same place an unresolvable Go module would appear. Its resolved source is still shown, so you can follow it up by hand.
 
 ### Multi-module repos
 
@@ -561,7 +561,7 @@ Note the two `===` headers: one Go unit qualified by toolchain version, one npm 
 
 ```
 $ modrot --recursive --direct-only /path/to/project
-Found 10 go.mod files, checking 90 unique GitHub repos...
+Found 10 manifests, checking 90 unique GitHub repos...
 === api/go.mod — github.com/myorg/myapp/api/v2 ===
 
 No archived dependencies found among 11 github.com modules.
