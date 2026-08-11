@@ -384,6 +384,14 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 		}
 	}
 
+	// --mermaid writes a diagram document to stdout. An ecosystem with no
+	// graph source has nothing to draw, and falling through to the flat path
+	// would print a text table into the middle of that document.
+	// warnUnsupported has already explained the omission.
+	if cfg.OutputFormat == "mermaid" && mi.eco.Graph == nil {
+		return exitCode(hasArchived)
+	}
+
 	// Output
 	outputFlat(cfg, filepath.ToSlash(filepath.Dir(relPath)), sarifManifestDir(cwd, mi.manifestPath), results, nonGitHubModules, fileMatches, deprecatedModules, stale, ignoredResults, ignoreList)
 

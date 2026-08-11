@@ -475,6 +475,14 @@ func runRecursiveText(modules []manifestInfo, statusMap map[string]RepoStatus, c
 			continue
 		}
 
+		// --mermaid writes a diagram document to stdout. An ecosystem with no
+		// graph source has nothing to draw, and falling through to the flat
+		// path would print a text table into the middle of that document.
+		// warnUnsupported has already explained the omission.
+		if cfg.OutputFormat == "mermaid" && mi.eco.Graph == nil {
+			continue
+		}
+
 		var fileMatches map[string][]FileMatch
 		if cfg.Files && hasArchived {
 			fm, err := mi.eco.ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
