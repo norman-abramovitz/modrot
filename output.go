@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -621,22 +622,36 @@ func PrintFiles(results []RepoStatus, fileMatches map[string][]FileMatch) {
 
 // PrintFilesPlain outputs quickfix-format lines: file:line:module_path
 // This format is compatible with vim's quickfix list and similar editor integrations.
-// For each archived module it emits the go.mod require site first (when the
-// require line is known), then every source-file import site.
-func PrintFilesPlain(gomodPath string, results []RepoStatus, fileMatches map[string][]FileMatch) {
-	lineByPath := make(map[string]int)
+// For each archived module it emits the manifest declaration site first (when
+// the line is known), then every source-file import site.
+//
+// unitDir is the unit's directory, relative to wherever the caller anchors
+// paths. The declaration site is unitDir joined with the module's own
+// LineFile, because a module's line can live in go.mod, package.json,
+// package-lock.json or bun.lock depending on where it was declared. A module
+// with no LineFile falls back to unitDir itself.
+func PrintFilesPlain(unitDir string, results []RepoStatus, fileMatches map[string][]FileMatch) {
+	type declSite struct {
+		line int
+		file string
+	}
+	declByPath := make(map[string]declSite)
 	var archivedPaths []string
 	for _, r := range results {
 		if r.IsArchived {
 			archivedPaths = append(archivedPaths, r.Module.Path)
-			lineByPath[r.Module.Path] = r.Module.Line
+			declByPath[r.Module.Path] = declSite{line: r.Module.Line, file: r.Module.LineFile}
 		}
 	}
 	sort.Strings(archivedPaths)
 
 	for _, modPath := range archivedPaths {
-		if line := lineByPath[modPath]; line > 0 {
-			_, _ = fmt.Fprintf(os.Stdout, "%s:%d:%s\n", gomodPath, line, modPath)
+		if decl := declByPath[modPath]; decl.line > 0 {
+			site := unitDir
+			if decl.file != "" {
+				site = path.Join(unitDir, decl.file)
+			}
+			_, _ = fmt.Fprintf(os.Stdout, "%s:%d:%s\n", site, decl.line, modPath)
 		}
 		for _, m := range fileMatches[modPath] {
 			_, _ = fmt.Fprintf(os.Stdout, "%s:%d:%s\n", m.File, m.Line, modPath)

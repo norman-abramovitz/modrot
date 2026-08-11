@@ -383,7 +383,7 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 	}
 
 	// Output
-	outputFlat(cfg, filepath.ToSlash(relPath), sarifManifestDir(cwd, mi.manifestPath), results, nonGitHubModules, fileMatches, deprecatedModules, stale, ignoredResults, ignoreList)
+	outputFlat(cfg, filepath.ToSlash(filepath.Dir(relPath)), sarifManifestDir(cwd, mi.manifestPath), results, nonGitHubModules, fileMatches, deprecatedModules, stale, ignoredResults, ignoreList)
 
 	return exitCode(hasArchived)
 }
@@ -487,14 +487,16 @@ func outputTree(cfg *Config, results []RepoStatus, graph map[string][]string, al
 }
 
 // outputFlat dispatches non-tree output to the appropriate format.
-func outputFlat(cfg *Config, gomodRel string, manifestDir string, results []RepoStatus, nonGitHubModules []Module,
+// unitDir is the unit's directory relative to cwd; quickfix and SARIF both
+// anchor a finding to a file inside it rather than to one fixed manifest.
+func outputFlat(cfg *Config, unitDir string, manifestDir string, results []RepoStatus, nonGitHubModules []Module,
 	fileMatches map[string][]FileMatch, deprecatedModules []Module,
 	stale []RepoStatus, ignoredResults []RepoStatus, ignoreList *IgnoreList) {
 
 	switch cfg.OutputFormat {
 	case "quickfix":
 		if fileMatches != nil {
-			PrintFilesPlain(gomodRel, results, fileMatches)
+			PrintFilesPlain(unitDir, results, fileMatches)
 		}
 	case "sarif":
 		PrintSARIF([]SARIFInput{{ManifestDir: manifestDir, Results: results, Deprecated: deprecatedModules}})
