@@ -367,6 +367,8 @@ audit/hashstructure.go:15:github.com/mitchellh/reflectwalk
 
 Use with vim: `vim -q <(modrot --quickfix)`
 
+Every path in the stream — manifest sites and source-file sites alike — is relative to the current working directory, the same base SARIF uses, so `vim -q` opens them from wherever modrot was invoked.
+
 ### Output formats
 
 **JSON:**

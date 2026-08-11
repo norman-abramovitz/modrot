@@ -330,7 +330,7 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 		_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found in %s\n", mi.manifestPath)
 		if cfg.OutputFormat == "sarif" {
 			PrintSARIF([]SARIFInput{{
-				ManifestDir: sarifManifestDir(cwd, mi.manifestPath),
+				ManifestDir: unitDirFromCwd(cwd, mi.manifestPath),
 				Deprecated:  collectDeprecated(cfg, mi.allModules),
 			}})
 		}
@@ -389,7 +389,7 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 	}
 
 	// Output
-	outputFlat(cfg, filepath.ToSlash(filepath.Dir(relPath)), sarifManifestDir(cwd, mi.manifestPath), results, nonGitHubModules, fileMatches, deprecatedModules, stale, ignoredResults, ignoreList)
+	outputFlat(cfg, unitDirFromCwd(cwd, mi.manifestPath), results, nonGitHubModules, fileMatches, deprecatedModules, stale, ignoredResults, ignoreList)
 
 	return exitCode(hasArchived)
 }
@@ -508,8 +508,9 @@ func outputTree(cfg *Config, results []RepoStatus, graph map[string][]string, al
 
 // outputFlat dispatches non-tree output to the appropriate format.
 // unitDir is the unit's directory relative to cwd; quickfix and SARIF both
-// anchor a finding to a file inside it rather than to one fixed manifest.
-func outputFlat(cfg *Config, unitDir string, manifestDir string, results []RepoStatus, nonGitHubModules []Module,
+// anchor a finding to a file inside it rather than to one fixed manifest, and
+// they share the one base so the same finding names the same file either way.
+func outputFlat(cfg *Config, unitDir string, results []RepoStatus, nonGitHubModules []Module,
 	fileMatches map[string][]FileMatch, deprecatedModules []Module,
 	stale []RepoStatus, ignoredResults []RepoStatus, ignoreList *IgnoreList) {
 
@@ -519,7 +520,7 @@ func outputFlat(cfg *Config, unitDir string, manifestDir string, results []RepoS
 			PrintFilesPlain(unitDir, results, fileMatches)
 		}
 	case "sarif":
-		PrintSARIF([]SARIFInput{{ManifestDir: manifestDir, Results: results, Deprecated: deprecatedModules}})
+		PrintSARIF([]SARIFInput{{ManifestDir: unitDir, Results: results, Deprecated: deprecatedModules}})
 		return
 	case "json":
 		PrintJSON(cfg, results, nonGitHubModules, fileMatches, stale, deprecatedModules)
