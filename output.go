@@ -625,11 +625,16 @@ func PrintFiles(results []RepoStatus, fileMatches map[string][]FileMatch) {
 // For each archived module it emits the manifest declaration site first (when
 // the line is known), then every source-file import site.
 //
-// unitDir is the unit's directory, relative to wherever the caller anchors
-// paths. The declaration site is unitDir joined with the module's own
-// LineFile, because a module's line can live in go.mod, package.json,
-// package-lock.json or bun.lock depending on where it was declared. A module
-// with no LineFile falls back to unitDir itself.
+// unitDir is the unit's directory relative to cwd, and every path emitted is
+// anchored to it — both the declaration site and the source-file import sites,
+// which the import scanner reports relative to the unit. One base for the whole
+// stream is what makes the output openable with `vim -q` from the invoking
+// directory, and it matches the base SARIF uses.
+//
+// The declaration site is unitDir joined with the module's own LineFile,
+// because a module's line can live in go.mod, package.json, package-lock.json
+// or bun.lock depending on where it was declared. A module with no LineFile
+// falls back to unitDir itself.
 func PrintFilesPlain(unitDir string, results []RepoStatus, fileMatches map[string][]FileMatch) {
 	type declSite struct {
 		line int
@@ -647,15 +652,25 @@ func PrintFilesPlain(unitDir string, results []RepoStatus, fileMatches map[strin
 
 	for _, modPath := range archivedPaths {
 		if decl := declByPath[modPath]; decl.line > 0 {
-			site := unitDir
-			if decl.file != "" {
-				site = path.Join(unitDir, decl.file)
-			}
-			_, _ = fmt.Fprintf(os.Stdout, "%s:%d:%s\n", site, decl.line, modPath)
+			_, _ = fmt.Fprintf(os.Stdout, "%s:%d:%s\n", quickfixPath(unitDir, decl.file), decl.line, modPath)
 		}
 		for _, m := range fileMatches[modPath] {
-			_, _ = fmt.Fprintf(os.Stdout, "%s:%d:%s\n", m.File, m.Line, modPath)
+			_, _ = fmt.Fprintf(os.Stdout, "%s:%d:%s\n", quickfixPath(unitDir, m.File), m.Line, modPath)
 		}
+	}
+}
+
+// quickfixPath anchors a unit-relative path to the unit's directory. An empty
+// name is the unit itself; an absolute name is already anchored and is left
+// alone rather than nonsensically joined.
+func quickfixPath(unitDir, name string) string {
+	switch {
+	case name == "":
+		return unitDir
+	case path.IsAbs(name):
+		return name
+	default:
+		return path.Join(unitDir, name)
 	}
 }
 

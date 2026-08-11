@@ -51,9 +51,10 @@ type manifestInfo struct {
 	nonGHModules  []Module
 }
 
-// sarifManifestDir returns the unit's directory relative to cwd, with forward
-// slashes, for use as the base of SARIF artifact locations.
-func sarifManifestDir(cwd, manifestPath string) string {
+// unitDirFromCwd returns the unit's directory relative to cwd, with forward
+// slashes. It is the base for both SARIF artifact locations and quickfix
+// paths, which must agree so a finding names the same file in either format.
+func unitDirFromCwd(cwd, manifestPath string) string {
 	dir := filepath.Dir(manifestPath)
 	if rel, err := filepath.Rel(cwd, dir); err == nil {
 		dir = rel
@@ -234,8 +235,11 @@ func dispatchRecursiveOutput(units []manifestInfo, statusMap map[string]RepoStat
 }
 
 // runRecursiveQuickfix outputs quickfix-format lines across all modules.
+// Paths are anchored to cwd, not to the scanned root, so `vim -q` can open
+// them from wherever modrot was invoked — the same base SARIF uses.
 func runRecursiveQuickfix(modules []manifestInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	hasAnyArchived := false
+	cwd, _ := os.Getwd()
 
 	for _, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
@@ -254,7 +258,7 @@ func runRecursiveQuickfix(modules []manifestInfo, statusMap map[string]RepoStatu
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
 				continue
 			}
-			PrintFilesPlain(filepath.ToSlash(filepath.Dir(mi.relPath)), results, fm)
+			PrintFilesPlain(unitDirFromCwd(cwd, mi.manifestPath), results, fm)
 		}
 	}
 
@@ -387,7 +391,7 @@ func runRecursiveSARIF(modules []manifestInfo, statusMap map[string]RepoStatus, 
 		}
 
 		inputs = append(inputs, SARIFInput{
-			ManifestDir: sarifManifestDir(cwd, mi.manifestPath),
+			ManifestDir: unitDirFromCwd(cwd, mi.manifestPath),
 			Results:     results,
 			Deprecated:  getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated),
 		})

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -197,7 +198,7 @@ func TestFormatArchivedLine_NoDates(t *testing.T) {
 // ahead of any source-file import sites.
 func TestPrintFilesPlain_IncludesGomodRequireSite(t *testing.T) {
 	results := []RepoStatus{{
-		Module:     Module{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar", Line: 7},
+		Module:     Module{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar", Line: 7, LineFile: "go.mod"},
 		IsArchived: true,
 	}}
 	fileMatches := map[string][]FileMatch{
@@ -205,7 +206,7 @@ func TestPrintFilesPlain_IncludesGomodRequireSite(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		PrintFilesPlain("go.mod", results, fileMatches)
+		PrintFilesPlain(".", results, fileMatches)
 	})
 
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -227,14 +228,57 @@ func TestPrintFilesPlain_IncludesGomodRequireSite(t *testing.T) {
 // line does not emit a bogus gomod:0: quickfix target.
 func TestPrintFilesPlain_SkipsGomodSiteWhenLineUnknown(t *testing.T) {
 	results := []RepoStatus{{
-		Module:     Module{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar"},
+		Module:     Module{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar", LineFile: "go.mod"},
 		IsArchived: true,
 	}}
 	out := captureStdout(t, func() {
-		PrintFilesPlain("go.mod", results, map[string][]FileMatch{})
+		PrintFilesPlain(".", results, map[string][]FileMatch{})
 	})
 	if strings.Contains(out, "go.mod:0:") {
 		t.Errorf("should not emit bogus line-0 go.mod site, got %q", out)
+	}
+}
+
+// TestPrintFilesPlain_OneBaseForEveryPath pins that the manifest site and the
+// source-file sites share the unit's base. The import scanner reports files
+// relative to the unit, so printing them unchanged next to a prefixed manifest
+// site produced `web/package.json:6:pkg` beside `src/app.js:1:pkg` for a file
+// that really lives at `web/src/app.js` — neither openable by `vim -q` from
+// the invoking directory, nor in agreement with SARIF.
+func TestPrintFilesPlain_OneBaseForEveryPath(t *testing.T) {
+	results := []RepoStatus{{
+		Module:     Module{Path: "pkg", Line: 6, LineFile: "package.json"},
+		IsArchived: true,
+	}}
+	fileMatches := map[string][]FileMatch{
+		"pkg": {{File: "src/app.js", Line: 1}},
+	}
+
+	out := captureStdout(t, func() {
+		PrintFilesPlain("web", results, fileMatches)
+	})
+
+	want := []string{"web/package.json:6:pkg", "web/src/app.js:1:pkg"}
+	got := strings.Split(strings.TrimSpace(out), "\n")
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestQuickfixPath covers the anchoring rules for a single quickfix path.
+func TestQuickfixPath(t *testing.T) {
+	tests := []struct{ unitDir, name, want string }{
+		{".", "go.mod", "go.mod"},
+		{".", "src/app.go", "src/app.go"},
+		{"web", "src/app.js", "web/src/app.js"},
+		{"../other/sub", "go.mod", "../other/sub/go.mod"},
+		{"web", "", "web"},
+		{"web", "/abs/app.js", "/abs/app.js"},
+	}
+	for _, tt := range tests {
+		if got := quickfixPath(tt.unitDir, tt.name); got != tt.want {
+			t.Errorf("quickfixPath(%q, %q) = %q, want %q", tt.unitDir, tt.name, got, tt.want)
+		}
 	}
 }
 
@@ -1523,7 +1567,7 @@ func TestPrintFilesPlain(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		PrintFilesPlain("go.mod", results, fileMatches)
+		PrintFilesPlain(".", results, fileMatches)
 	})
 
 	lines := strings.Split(strings.TrimSpace(output), "\n")
