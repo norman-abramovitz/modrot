@@ -292,7 +292,7 @@ $ modrot --resolve --deprecated --stale --freshness --json > reports/deps-$(date
 Compare snapshots to see if debt is accumulating or being paid down. Use `jq` to extract trends:
 
 ```
-$ jq '.archived | length' reports/deps-*.json
+$ jq '[(.modules // [.])[].archived[]?] | length' reports/deps-*.json
 ```
 
 ### Migration planning
@@ -347,11 +347,14 @@ modrot --markdown --all --deprecated > dependency-report.md
 **JSON scripting with jq:**
 
 ```bash
+# `.modules // [.]` reads both JSON shapes: a scan that finds one manifest
+# emits a flat document, one that finds several wraps them in `.modules`.
+
 # List archived module paths
-modrot --json | jq -r '.archived[].module'
+modrot --json | jq -r '(.modules // [.])[].archived[]?.module'
 
 # Count archived direct dependencies
-modrot --json | jq '[.archived[] | select(.direct)] | length'
+modrot --json | jq '[(.modules // [.])[].archived[]? | select(.direct)] | length'
 ```
 
 **Editor quickfix** — navigate directly to each archived module's declaration line, then to the source files importing it. The declaration site is whichever manifest actually declares it: `go.mod` for a Go unit, `package.json` for a direct npm dependency, `package-lock.json` or `bun.lock` for a transitive one.
@@ -393,6 +396,34 @@ $ modrot --json
 ```
 
 Combine `--tree --json` for a structured tree, or add `--files` to include `source_files` arrays. With `--deprecated`, a separate `"deprecated"` array is included.
+
+The document above is the **flat** shape, emitted when a scan finds exactly one manifest unit. When a scan finds more than one, results are **wrapped** per unit instead:
+
+```
+$ modrot --json
+{
+  "modules": [
+    {
+      "go_mod": "go.mod",
+      "module_path": "github.com/myorg/myapp",
+      "go_version": "go1.26.5",
+      "archived": [ ... ],
+      "non_github_count": 0,
+      "total_checked": 0
+    },
+    {
+      "go_mod": "package.json",
+      "module_path": "myapp-tooling",
+      "go_version": "npm, unlocked",
+      "archived": [ ... ],
+      "non_github_count": 0,
+      "total_checked": 0
+    }
+  ]
+}
+```
+
+The shape follows what the scan finds, not which flags were passed — so a Go repository with a root `package.json` (husky, commitlint, prettier) emits the wrapped shape without `--recursive`. Scripts that must handle either shape can normalize with `.modules // [.]`, as the jq examples above do.
 
 **Markdown:**
 
@@ -584,6 +615,8 @@ Skips `vendor/`, `testdata/`, and hidden directories. Combines with all other fl
 $ modrot --recursive --json --deprecated --resolve /path/to/monorepo
 ```
 
+Per-unit output is not exclusive to `--recursive` — any scan that finds more than one manifest unit uses it, including a single directory holding both a `go.mod` and a `package.json`. See [Output formats](#output-formats) for the two JSON shapes.
+
 ### Portfolio-wide scanning
 
 To scan multiple independent repos, loop over them and aggregate JSON output:
@@ -591,7 +624,7 @@ To scan multiple independent repos, loop over them and aggregate JSON output:
 ```bash
 for repo in ~/Projects/*/go.mod; do
   modrot --json --resolve --deprecated "$repo" 2>/dev/null
-done | jq -s '[.[].archived[]] | group_by(.module) | map({module: .[0].module, count: length}) | sort_by(-.count)'
+done | jq -s '[.[] | (.modules // [.])[].archived[]?] | group_by(.module) | map({module: .[0].module, count: length}) | sort_by(-.count)'
 ```
 
 This identifies the most common archived dependencies across your portfolio. For repos that are monorepos, add `--recursive` to scan every manifest within each repo.
