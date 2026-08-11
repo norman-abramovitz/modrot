@@ -318,8 +318,10 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 	// Filter to GitHub modules and deduplicate
 	githubModules, nonGitHubModules := FilterGitHub(mi.allModules, cfg.DirectOnly)
 
-	// Enrich non-GitHub modules with proxy data
-	if len(nonGitHubModules) > 0 {
+	// Enrich non-GitHub modules with proxy data. Only Go units: the proxy
+	// knows nothing about npm names, so it would answer every lookup with a
+	// miss and overwrite the SourceURL that the npm registry already supplied.
+	if len(nonGitHubModules) > 0 && mi.eco.Name == "go" {
 		EnrichNonGitHub(nonGitHubModules, 20)
 	}
 
