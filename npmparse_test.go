@@ -756,6 +756,43 @@ func TestParseNPMUnitUnlocked(t *testing.T) {
 	}
 }
 
+// Without a lockfile the declared constraint is a range, and the registry's
+// per-version endpoint 404s on a range — which the client reads as "no such
+// package", making every dependency silently vanish. Version must be cleared
+// so the resolve phase asks for dist-tags.latest instead.
+func TestParseNPMUnitUnlockedClearsRanges(t *testing.T) {
+	const pkg = `{
+  "name": "range-app",
+  "dependencies": {
+    "xterm": "^5.3.0",
+    "pinned": "1.2.3"
+  }
+}
+`
+	dir := t.TempDir()
+	writeFile(t, dir, "package.json", pkg)
+
+	res, err := parseNPMUnit(dir)
+	if err != nil {
+		t.Fatalf("parseNPMUnit: %v", err)
+	}
+	if !res.Unlocked {
+		t.Fatal("Unlocked = false, want true")
+	}
+	for _, m := range res.Modules {
+		if m.Version != "" {
+			t.Errorf("%s: Version = %q, want empty so the client uses dist-tags.latest", m.Path, m.Version)
+		}
+		// The anchor must survive; only the version is cleared.
+		if m.LineFile != "package.json" || m.Line == 0 {
+			t.Errorf("%s: anchor lost (%s:%d)", m.Path, m.LineFile, m.Line)
+		}
+		if !m.Direct {
+			t.Errorf("%s: Direct = false, want true", m.Path)
+		}
+	}
+}
+
 func TestParseNPMUnitPrefersBunLock(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "package.json", testPackageJSON)
