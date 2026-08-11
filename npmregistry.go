@@ -262,14 +262,19 @@ func resolveNPMWithClient(modules []Module, c *npmClient) int {
 // checkNPMDeprecationsWithClient is the internal implementation, accepting a
 // client so tests can point at a mock registry.
 func checkNPMDeprecationsWithClient(modules []Module, c *npmClient) int {
-	// Failures were already reported by the resolve phase, which fetches the
-	// same keys; reporting again would double-count.
-	found, _ := npmFetchAll(modules, c, func(m *Module, info *npmVersionInfo) bool {
+	found, failed := npmFetchAll(modules, c, func(m *Module, info *npmVersionInfo) bool {
 		if info.Deprecated == "" {
 			return false
 		}
 		m.Deprecated = info.Deprecated
 		return true
 	})
+	// Report this phase's failures too, rather than assuming the resolve
+	// phase already covered them. For an unlocked unit resolve fills in the
+	// version, so this phase keys on a version resolve never fetched — its
+	// failures are not a subset of resolve's. Warning twice about the same
+	// package when the keys DO coincide is a far smaller harm than leaving
+	// a package's deprecation status silently unchecked.
+	warnIncomplete(failed)
 	return found
 }
