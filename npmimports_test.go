@@ -85,6 +85,52 @@ func TestScanNPMImports(t *testing.T) {
 	}
 }
 
+// A line can carry more than one import statement. Extracting only the
+// first specifier drops the rest, and drops a real match entirely when the
+// first specifier belongs to a package that was not requested.
+func TestScanNPMImportsMultiplePerLine(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("rg not installed")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	if err := os.MkdirAll(src, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	content := "" +
+		"const a = require('xterm-addon-fit'), b = require('xterm');\n" +
+		"import x from 'xterm'; import y from 'xterm/css/xterm.css';\n" +
+		"import p from 'xterm'; import q from 'xterm';\n"
+	if err := os.WriteFile(filepath.Join(src, "multi.ts"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ScanNPMImports(dir, []string{"xterm", "xterm-addon-fit"})
+	if err != nil {
+		t.Fatalf("ScanNPMImports: %v", err)
+	}
+
+	// Line 1: the second require must not be lost behind the first.
+	// Line 2: two distinct specifiers, both reported.
+	// Line 3: the same specifier twice, reported once.
+	var lines []int
+	for _, m := range got["xterm"] {
+		lines = append(lines, m.Line)
+	}
+	if len(got["xterm"]) != 4 {
+		t.Fatalf("xterm: got %d matches %v, want 4", len(got["xterm"]), lines)
+	}
+	want := []int{1, 2, 2, 3}
+	for i, w := range want {
+		if lines[i] != w {
+			t.Errorf("xterm match %d on line %d, want %d (all: %v)", i, lines[i], w, lines)
+		}
+	}
+	if len(got["xterm-addon-fit"]) != 1 {
+		t.Errorf("xterm-addon-fit: got %d matches, want 1", len(got["xterm-addon-fit"]))
+	}
+}
+
 func TestScanNPMImportsNoPackages(t *testing.T) {
 	got, err := ScanNPMImports(t.TempDir(), nil)
 	if err != nil {

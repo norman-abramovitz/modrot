@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -78,26 +79,37 @@ func parseNPMRgOutput(output, projectDir string, pkgNames []string) map[string][
 		projectDir += "/"
 	}
 
+	// One physical line can carry more than one import statement. Taking
+	// only the first specifier drops the rest silently — and if the first
+	// one is a package we were not asked about, a real match on that line
+	// vanishes with no signal at all.
+	seen := make(map[string]bool)
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
 		file, lineNum, content, ok := parseRgLine(scanner.Text())
 		if !ok {
 			continue
 		}
-		match := npmSpecRe.FindStringSubmatch(content)
-		if match == nil {
-			continue
+		rel := strings.TrimPrefix(file, projectDir)
+		for _, match := range npmSpecRe.FindAllStringSubmatch(content, -1) {
+			spec := match[1]
+			pkg := matchModule(spec, sorted)
+			if pkg == "" {
+				continue
+			}
+			// Distinct subpaths on one line are distinct findings; the same
+			// specifier twice on one line is not.
+			key := pkg + "\x00" + rel + "\x00" + strconv.Itoa(lineNum) + "\x00" + spec
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			results[pkg] = append(results[pkg], FileMatch{
+				File:       rel,
+				Line:       lineNum,
+				ImportPath: spec,
+			})
 		}
-		spec := match[1]
-		pkg := matchModule(spec, sorted)
-		if pkg == "" {
-			continue
-		}
-		results[pkg] = append(results[pkg], FileMatch{
-			File:       strings.TrimPrefix(file, projectDir),
-			Line:       lineNum,
-			ImportPath: spec,
-		})
 	}
 
 	for pkg := range results {
