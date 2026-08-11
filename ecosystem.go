@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -158,6 +159,13 @@ func buildManifestInfos(dirs []string, rootDir string) ([]manifestInfo, int) {
 			})
 		}
 	}
+	// WalkDir visits a directory before its entries, so units arrive
+	// root-first; the pre-npm walk appended when it reached the go.mod FILE,
+	// which yields path order. Sort to restore that order byte-for-byte and
+	// to interleave npm units by path rather than by discovery accident —
+	// unit order is user-visible in text, --json modules[] and --sarif
+	// results[], where the first location anchors a code-scanning alert.
+	sort.SliceStable(units, func(i, j int) bool { return units[i].manifestPath < units[j].manifestPath })
 	return units, failed
 }
 
