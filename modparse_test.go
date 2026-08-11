@@ -335,6 +335,34 @@ func TestFilterGitHub_DeduplicatesMultiPathRepos(t *testing.T) {
 	}
 }
 
+// A scoped npm monorepo publishes many distinct packages from one repository.
+// Collapsing them to owner/repo, as Go modules must be, made four of five
+// @babel packages vanish from every output and from the --files scan.
+func TestFilterGitHubKeepsNPMPackagesSharingARepo(t *testing.T) {
+	modules := []Module{
+		{Path: "@babel/core", Version: "7.24.0", Direct: true, Owner: "babel", Repo: "babel", Ecosystem: "npm"},
+		{Path: "@babel/parser", Version: "7.24.0", Direct: true, Owner: "babel", Repo: "babel", Ecosystem: "npm"},
+		{Path: "@babel/traverse", Version: "7.24.0", Direct: true, Owner: "babel", Repo: "babel", Ecosystem: "npm"},
+	}
+
+	gh, _ := FilterGitHub(modules, false)
+	if len(gh) != 3 {
+		t.Fatalf("got %d npm packages, want 3", len(gh))
+	}
+	for i, want := range []string{"@babel/core", "@babel/parser", "@babel/traverse"} {
+		if gh[i].Path != want {
+			t.Errorf("gh[%d].Path = %q, want %q", i, gh[i].Path, want)
+		}
+	}
+
+	// The same package name at two versions is still one package: the dedup
+	// keys on the path, so only the first survives.
+	dup := append(modules, Module{Path: "@babel/core", Version: "7.9.0", Owner: "babel", Repo: "babel", Ecosystem: "npm"})
+	if gh, _ = FilterGitHub(dup, false); len(gh) != 3 {
+		t.Errorf("duplicate path: got %d, want 3", len(gh))
+	}
+}
+
 func TestParseGoModSetsEcosystemAndLineFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "go.mod")

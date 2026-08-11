@@ -109,7 +109,8 @@ func GoModInfo(path string) (moduleName, goVersion string, err error) {
 }
 
 // FilterGitHub separates modules into GitHub and non-GitHub.
-// GitHub modules are deduplicated by owner/repo.
+// Go modules are deduplicated by owner/repo; npm packages by package path,
+// since a scoped monorepo publishes many distinct packages from one repo.
 func FilterGitHub(modules []Module, directOnly bool) (github []Module, nonGitHub []Module) {
 	seen := make(map[string]bool)
 	for _, m := range modules {
@@ -121,6 +122,11 @@ func FilterGitHub(modules []Module, directOnly bool) (github []Module, nonGitHub
 			continue
 		}
 		key := m.Owner + "/" + m.Repo
+		if m.Ecosystem == "npm" {
+			// npm packages that share a repository are still distinct packages;
+			// only Go modules collapse to one repo.
+			key = "npm\x00" + m.Path
+		}
 		if seen[key] {
 			continue
 		}
