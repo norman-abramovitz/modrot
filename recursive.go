@@ -375,6 +375,7 @@ func runRecursiveMarkdown(modules []manifestInfo, statusMap map[string]RepoStatu
 			_, _ = fmt.Fprintln(os.Stdout)
 		}
 		_, _ = fmt.Fprintf(os.Stdout, "# %s\n\n", unitHeader(mi, cfg))
+		warnUnsupported(mi, cfg)
 
 		if len(mi.githubModules) == 0 {
 			_, _ = fmt.Fprintf(os.Stdout, "No GitHub modules found.\n")
