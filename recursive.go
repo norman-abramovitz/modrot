@@ -137,9 +137,17 @@ func checkUnitsOnGitHub(units []manifestInfo, cfg *Config) (map[string]RepoStatu
 	// Enrich non-GitHub modules with proxy data
 	enrichAcrossModules(units)
 
-	// Enrich all modules with freshness data (skips already-enriched)
+	// Enrich all modules with freshness data (skips already-enriched).
+	// npm has no equivalent of the Go module proxy's freshness endpoints, so
+	// npm units are excluded rather than passed through.
 	if cfg.Freshness {
-		enrichFreshnessAcrossModules(units)
+		var goUnits []manifestInfo
+		for i := range units {
+			if units[i].eco.Name == "go" {
+				goUnits = append(goUnits, units[i])
+			}
+		}
+		enrichFreshnessAcrossModules(goUnits)
 	}
 
 	if len(allGitHub) == 0 {
@@ -238,9 +246,16 @@ func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, c
 				}
 			}
 
-			graph, err := parseModGraph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
-			if err != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph for %s: %v\n", mi.relPath, err)
+			var graph map[string][]string
+			if mi.eco.Graph != nil {
+				g, err := mi.eco.Graph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
+				if err != nil {
+					_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph for %s: %v\n", mi.relPath, err)
+					graph = map[string][]string{}
+				} else {
+					graph = g
+				}
+			} else {
 				graph = map[string][]string{}
 			}
 
@@ -359,7 +374,7 @@ func runRecursiveMarkdown(modules []manifestInfo, statusMap map[string]RepoStatu
 		if i > 0 {
 			_, _ = fmt.Fprintln(os.Stdout)
 		}
-		_, _ = fmt.Fprintf(os.Stdout, "# %s — %s (%s)\n\n", mi.relPath, mi.moduleName, cfg.GoToolchain)
+		_, _ = fmt.Fprintf(os.Stdout, "# %s\n\n", unitHeader(mi, cfg))
 
 		if len(mi.githubModules) == 0 {
 			_, _ = fmt.Fprintf(os.Stdout, "No GitHub modules found.\n")
@@ -379,8 +394,8 @@ func runRecursiveMarkdown(modules []manifestInfo, statusMap map[string]RepoStatu
 		deprecatedModules := getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated)
 		stale := filterStale(cfg, results)
 
-		if cfg.Tree && hasArchived {
-			graph, err := parseModGraph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
+		if cfg.Tree && hasArchived && mi.eco.Graph != nil {
+			graph, err := mi.eco.Graph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", err)
 			} else {
@@ -436,7 +451,8 @@ func runRecursiveText(modules []manifestInfo, statusMap map[string]RepoStatus, c
 		if i > 0 {
 			_, _ = fmt.Fprintln(os.Stderr)
 		}
-		_, _ = fmt.Fprintf(os.Stderr, "=== %s — %s (%s) ===\n", mi.relPath, mi.moduleName, cfg.GoToolchain)
+		_, _ = fmt.Fprintf(os.Stderr, "=== %s ===\n", unitHeader(mi, cfg))
+		warnUnsupported(mi, cfg)
 
 		if len(mi.githubModules) == 0 {
 			_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found.\n")
@@ -456,8 +472,8 @@ func runRecursiveText(modules []manifestInfo, statusMap map[string]RepoStatus, c
 		deprecatedModules := getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated)
 		stale := filterStale(cfg, results)
 
-		if cfg.Tree && hasArchived {
-			graph, err := parseModGraph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
+		if cfg.Tree && hasArchived && mi.eco.Graph != nil {
+			graph, err := mi.eco.Graph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", err)
 			} else {

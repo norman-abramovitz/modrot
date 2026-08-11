@@ -161,6 +161,38 @@ func buildManifestInfos(dirs []string, rootDir string) ([]manifestInfo, int) {
 	return units, failed
 }
 
+// unitHeader renders the per-unit banner: which manifest, which project, and
+// which toolchain or ecosystem it belongs to.
+func unitHeader(mi manifestInfo, cfg *Config) string {
+	qualifier := cfg.GoToolchain
+	if mi.eco.Name != "go" {
+		qualifier = mi.eco.Name
+		if mi.unlocked {
+			qualifier += ", unlocked"
+		}
+	}
+	return fmt.Sprintf("%s — %s (%s)", filepath.ToSlash(mi.relPath), mi.moduleName, qualifier)
+}
+
+// warnUnsupported reports the flags this unit's ecosystem cannot honor, once
+// per unit, so the user is never left wondering why a section is missing.
+func warnUnsupported(mi manifestInfo, cfg *Config) {
+	if (cfg.Tree || cfg.OutputFormat == "mermaid") && mi.eco.Graph == nil {
+		_, _ = fmt.Fprintf(os.Stderr,
+			"Warning: --tree is not supported for %s (no dependency graph source); showing flat output for %s\n",
+			mi.eco.Name, mi.relPath)
+	}
+	if (cfg.Freshness || cfg.Age.Enabled) && mi.eco.Name == "npm" {
+		_, _ = fmt.Fprintf(os.Stderr,
+			"Warning: --freshness and --age are not supported for npm (they require full registry packuments); skipping for %s\n",
+			mi.relPath)
+	}
+	if mi.unlocked {
+		_, _ = fmt.Fprintf(os.Stderr,
+			"Note: %s has no lockfile; versions resolved to dist-tags.latest\n", mi.relPath)
+	}
+}
+
 // reportNoUnits explains an empty scan. A manifest that exists but failed to
 // parse must not be reported as a missing manifest.
 func reportNoUnits(dir string, failed int) int {
