@@ -259,6 +259,37 @@ func TestResolveNPMReportsUnreachablePackages(t *testing.T) {
 	}
 }
 
+// The deprecation phase must report its own unreachable packages. For an
+// unlocked unit the resolve phase fills in the version, so this phase keys on
+// a version resolve never fetched — its failures are not a subset of
+// resolve's, and dropping them would leave a package silently unchecked.
+func TestCheckNPMDeprecationsReportsUnreachablePackages(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := newNPMClient()
+	c.baseURL = srv.URL
+
+	mods := []Module{{Path: "unreachable", Version: "1.0.0", Ecosystem: "npm"}}
+	if got := checkNPMDeprecationsWithClient(mods, c); got != 0 {
+		t.Errorf("found %d deprecated, want 0", got)
+	}
+	if hits == 0 {
+		t.Error("registry was never contacted")
+	}
+	// A transient failure must not be cached, so a retry re-requests it.
+	if _, ok := c.fetch("unreachable", "1.0.0"); ok {
+		t.Error("transient failure was cached as a definitive answer")
+	}
+	if mods[0].Deprecated != "" {
+		t.Errorf("Deprecated = %q, want empty", mods[0].Deprecated)
+	}
+}
+
 // The same package@version must be fetched once no matter how often it appears.
 func TestNPMClientCaches(t *testing.T) {
 	var hits int
