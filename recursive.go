@@ -74,6 +74,21 @@ func goOnlyUnits(units []manifestInfo) []manifestInfo {
 	return goUnits
 }
 
+// applyUnitIgnores applies a unit's ignore list to its results, returning the
+// surviving results, the ignored ones, and the list itself (which carries the
+// per-path reasons that --show-ignored prints).
+func applyUnitIgnores(mi manifestInfo, results []RepoStatus, cfg *Config) ([]RepoStatus, []RepoStatus, *IgnoreList) {
+	il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
+	if il.Len() == 0 {
+		return results, nil, il
+	}
+	kept, ignored := il.FilterResults(results)
+	if len(ignored) > 0 && !cfg.ShowIgnored {
+		_, _ = fmt.Fprintf(os.Stderr, "Ignored %d %s.\n", len(ignored), pluralize(len(ignored), "module", "modules"))
+	}
+	return kept, ignored, il
+}
+
 // getDeprecatedModules returns modules with non-empty Deprecated field,
 // respecting the directOnly filter. Returns nil if deprecatedMode is false.
 func getDeprecatedModules(allModules []Module, directOnly bool, deprecatedMode bool) []Module {
@@ -156,7 +171,7 @@ func checkUnitsOnGitHub(units []manifestInfo, cfg *Config) (map[string]RepoStatu
 	// Enrich all modules with freshness data (skips already-enriched).
 	// npm has no equivalent of the Go module proxy's freshness endpoints, so
 	// npm units are excluded rather than passed through.
-	if cfg.Freshness {
+	if cfg.Freshness || cfg.Age.Enabled {
 		enrichFreshnessAcrossModules(goOnlyUnits(units))
 	}
 
@@ -364,16 +379,7 @@ func runRecursiveMarkdown(modules []manifestInfo, statusMap map[string]RepoStatu
 
 	for i, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
-
-		// Apply ignore list
-		il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
-		if il.Len() > 0 {
-			var ignored []RepoStatus
-			results, ignored = il.FilterResults(results)
-			if len(ignored) > 0 {
-				_, _ = fmt.Fprintf(os.Stderr, "Ignored %d %s.\n", len(ignored), pluralize(len(ignored), "module", "modules"))
-			}
-		}
+		results, ignored, il := applyUnitIgnores(mi, results, cfg)
 
 		archivedPaths := getArchivedPaths(results)
 		hasArchived := len(archivedPaths) > 0
@@ -405,6 +411,7 @@ func runRecursiveMarkdown(modules []manifestInfo, statusMap map[string]RepoStatu
 		deprecatedModules := getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated)
 		stale := filterStale(cfg, results)
 
+		rendered := false
 		if cfg.Tree && hasArchived && mi.eco.Graph != nil {
 			graph, err := mi.eco.Graph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
 			if err != nil {
@@ -420,17 +427,20 @@ func runRecursiveMarkdown(modules []manifestInfo, statusMap map[string]RepoStatu
 				if len(mi.nonGHModules) > 0 {
 					PrintMarkdownSkipped(cfg, mi.nonGHModules)
 				}
-				continue
+				rendered = true
 			}
 		}
 
-		PrintMarkdown(cfg, results, mi.nonGHModules, deprecatedModules)
-		if fileMatches != nil {
-			PrintMarkdownFiles(results, fileMatches)
+		if !rendered {
+			PrintMarkdown(cfg, results, mi.nonGHModules, deprecatedModules)
+			if fileMatches != nil {
+				PrintMarkdownFiles(results, fileMatches)
+			}
+			if len(stale) > 0 {
+				PrintMarkdownStale(cfg, stale)
+			}
 		}
-		if len(stale) > 0 {
-			PrintMarkdownStale(cfg, stale)
-		}
+		outputSupplement(cfg, results, mi.nonGHModules, stale, deprecatedModules, ignored, il)
 	}
 
 	return hasAnyArchived
@@ -442,16 +452,7 @@ func runRecursiveText(modules []manifestInfo, statusMap map[string]RepoStatus, c
 
 	for i, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
-
-		// Apply ignore list
-		il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
-		if il.Len() > 0 {
-			var ignored []RepoStatus
-			results, ignored = il.FilterResults(results)
-			if len(ignored) > 0 {
-				_, _ = fmt.Fprintf(os.Stderr, "Ignored %d %s.\n", len(ignored), pluralize(len(ignored), "module", "modules"))
-			}
-		}
+		results, ignored, il := applyUnitIgnores(mi, results, cfg)
 
 		archivedPaths := getArchivedPaths(results)
 		hasArchived := len(archivedPaths) > 0
@@ -483,6 +484,7 @@ func runRecursiveText(modules []manifestInfo, statusMap map[string]RepoStatus, c
 		deprecatedModules := getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated)
 		stale := filterStale(cfg, results)
 
+		rendered := false
 		if cfg.Tree && hasArchived && mi.eco.Graph != nil {
 			graph, err := mi.eco.Graph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
 			if err != nil {
@@ -502,17 +504,20 @@ func runRecursiveText(modules []manifestInfo, statusMap map[string]RepoStatus, c
 						PrintSkippedTable(cfg, mi.nonGHModules)
 					}
 				}
-				continue
+				rendered = true
 			}
 		}
 
-		PrintTable(cfg, results, mi.nonGHModules, deprecatedModules)
-		if fileMatches != nil {
-			PrintFiles(results, fileMatches)
+		if !rendered {
+			PrintTable(cfg, results, mi.nonGHModules, deprecatedModules)
+			if fileMatches != nil {
+				PrintFiles(results, fileMatches)
+			}
+			if len(stale) > 0 {
+				PrintStaleTable(cfg, stale)
+			}
 		}
-		if len(stale) > 0 {
-			PrintStaleTable(cfg, stale)
-		}
+		outputSupplement(cfg, results, mi.nonGHModules, stale, deprecatedModules, ignored, il)
 	}
 
 	return hasAnyArchived
