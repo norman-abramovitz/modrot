@@ -203,7 +203,7 @@ func runRecursiveQuickfix(modules []manifestInfo, statusMap map[string]RepoStatu
 		archivedPaths := getArchivedPaths(results)
 		if len(archivedPaths) > 0 {
 			hasAnyArchived = true
-			fm, err := ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
+			fm, err := mi.eco.ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
 				continue
@@ -238,7 +238,7 @@ func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, c
 
 			var fileMatches map[string][]FileMatch
 			if cfg.Files && len(archivedPaths) > 0 {
-				fm, err := ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
+				fm, err := mi.eco.ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
 				if err != nil {
 					_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
 				} else {
@@ -291,7 +291,7 @@ func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, c
 
 			var fileMatches map[string][]FileMatch
 			if cfg.Files && len(archivedPaths) > 0 {
-				fm, err := ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
+				fm, err := mi.eco.ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
 				if err != nil {
 					_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
 				} else {
@@ -384,7 +384,7 @@ func runRecursiveMarkdown(modules []manifestInfo, statusMap map[string]RepoStatu
 
 		var fileMatches map[string][]FileMatch
 		if cfg.Files && hasArchived {
-			fm, err := ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
+			fm, err := mi.eco.ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports: %v\n", err)
 			} else {
@@ -462,7 +462,7 @@ func runRecursiveText(modules []manifestInfo, statusMap map[string]RepoStatus, c
 
 		var fileMatches map[string][]FileMatch
 		if cfg.Files && hasArchived {
-			fm, err := ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
+			fm, err := mi.eco.ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports: %v\n", err)
 			} else {
