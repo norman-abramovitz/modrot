@@ -428,7 +428,7 @@ func TestResolveAcrossModules_WorkerPool(t *testing.T) {
 	}))
 	defer proxy.Close()
 
-	modules := []moduleInfo{
+	modules := []manifestInfo{
 		{
 			allModules: []Module{
 				{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
@@ -462,7 +462,7 @@ func TestResolveAcrossModules_WorkerPool(t *testing.T) {
 }
 
 func TestResolveAcrossModules_WorkerPool_Empty(t *testing.T) {
-	modules := []moduleInfo{
+	modules := []manifestInfo{
 		{
 			allModules: []Module{
 				{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},

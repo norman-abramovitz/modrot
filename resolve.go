@@ -261,15 +261,15 @@ func parseMetaTags(body string) (goImport, goSource string) {
 }
 
 // resolveAcrossModules resolves non-GitHub modules across multiple
-// moduleInfo entries (for --recursive), deduplicating by module path.
+// manifestInfo entries (for --recursive), deduplicating by module path.
 // It updates Owner/Repo in-place on each Module. Returns the total count resolved.
-func resolveAcrossModules(modules []moduleInfo) int {
+func resolveAcrossModules(modules []manifestInfo) int {
 	return resolveAcrossModulesWithResolver(modules, newResolver())
 }
 
 // resolveAcrossModulesWithResolver is the internal implementation that accepts
 // a resolver, allowing tests to inject mock HTTP servers.
-func resolveAcrossModulesWithResolver(modules []moduleInfo, r *resolver) int {
+func resolveAcrossModulesWithResolver(modules []manifestInfo, r *resolver) int {
 	// Collect unique non-GitHub module paths and their locations.
 	type location struct {
 		miIdx  int // index into modules slice

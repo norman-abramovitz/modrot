@@ -62,11 +62,15 @@ func getArchivedPaths(results []RepoStatus) []string {
 	return paths
 }
 
-// moduleInfo holds parsed data for a single go.mod file.
-type moduleInfo struct {
-	gomodPath     string
+// manifestInfo holds parsed data for a single manifest unit: one go.mod, or
+// one package.json plus its lockfile.
+type manifestInfo struct {
+	eco           *Ecosystem //nolint:unused // populated by Task 11
+	manifestPath  string     // path to the primary manifest
+	files         []string   //nolint:unused // manifest base names read for this unit; populated by Task 11
 	relPath       string
 	moduleName    string
+	unlocked      bool //nolint:unused // populated by Task 11
 	allModules    []Module
 	githubModules []Module
 	nonGHModules  []Module
@@ -117,7 +121,7 @@ func runRecursive(rootDir string, cfg *Config) int {
 	}
 
 	// Phase 1: Parse all go.mod files
-	var modules []moduleInfo
+	var modules []manifestInfo
 	for _, gp := range gomodPaths {
 		allMods, err := ParseGoMod(gp)
 		if err != nil {
@@ -126,11 +130,11 @@ func runRecursive(rootDir string, cfg *Config) int {
 		}
 		modName, _ := ModuleName(gp)
 		rel, _ := filepath.Rel(rootDir, gp)
-		modules = append(modules, moduleInfo{
-			gomodPath:  gp,
-			relPath:    rel,
-			moduleName: modName,
-			allModules: allMods,
+		modules = append(modules, manifestInfo{
+			manifestPath: gp,
+			relPath:      rel,
+			moduleName:   modName,
+			allModules:   allMods,
 		})
 	}
 
@@ -187,7 +191,7 @@ func runRecursive(rootDir string, cfg *Config) int {
 			inputs := make([]SARIFInput, 0, len(modules))
 			for _, mi := range modules {
 				inputs = append(inputs, SARIFInput{
-					GomodURI:   sarifGomodURI(cwd, mi.gomodPath),
+					GomodURI:   sarifGomodURI(cwd, mi.manifestPath),
 					Deprecated: getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated),
 				})
 			}
@@ -233,13 +237,13 @@ func runRecursive(rootDir string, cfg *Config) int {
 }
 
 // runRecursiveQuickfix outputs quickfix-format lines across all modules.
-func runRecursiveQuickfix(modules []moduleInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
+func runRecursiveQuickfix(modules []manifestInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	hasAnyArchived := false
 
 	for _, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
 
-		il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.IgnoreFile, cfg.IgnoreInline)
+		il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
 		if il.Len() > 0 {
 			results, _ = il.FilterResults(results)
 		}
@@ -247,7 +251,7 @@ func runRecursiveQuickfix(modules []moduleInfo, statusMap map[string]RepoStatus,
 		archivedPaths := getArchivedPaths(results)
 		if len(archivedPaths) > 0 {
 			hasAnyArchived = true
-			fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
+			fm, err := ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
 				continue
@@ -260,7 +264,7 @@ func runRecursiveQuickfix(modules []moduleInfo, statusMap map[string]RepoStatus,
 }
 
 // runRecursiveJSON outputs recursive results as a single JSON document.
-func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
+func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	hasAnyArchived := false
 
 	if cfg.Tree {
@@ -270,7 +274,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 			results := applyStatus(mi.githubModules, statusMap)
 
 			// Apply ignore list
-			il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.IgnoreFile, cfg.IgnoreInline)
+			il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
 			if il.Len() > 0 {
 				results, _ = il.FilterResults(results)
 			}
@@ -282,7 +286,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 
 			var fileMatches map[string][]FileMatch
 			if cfg.Files && len(archivedPaths) > 0 {
-				fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
+				fm, err := ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
 				if err != nil {
 					_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
 				} else {
@@ -290,7 +294,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 				}
 			}
 
-			graph, err := parseModGraph(filepath.Dir(mi.gomodPath), cfg.GoVersion)
+			graph, err := parseModGraph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph for %s: %v\n", mi.relPath, err)
 				graph = map[string][]string{}
@@ -316,7 +320,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 			results := applyStatus(mi.githubModules, statusMap)
 
 			// Apply ignore list
-			il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.IgnoreFile, cfg.IgnoreInline)
+			il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
 			if il.Len() > 0 {
 				results, _ = il.FilterResults(results)
 			}
@@ -328,7 +332,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 
 			var fileMatches map[string][]FileMatch
 			if cfg.Files && len(archivedPaths) > 0 {
-				fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
+				fm, err := ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
 				if err != nil {
 					_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports for %s: %v\n", mi.relPath, err)
 				} else {
@@ -357,7 +361,7 @@ func runRecursiveJSON(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 
 // runRecursiveSARIF outputs one SARIF document covering all go.mod files,
 // each finding anchored to its own go.mod path.
-func runRecursiveSARIF(modules []moduleInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
+func runRecursiveSARIF(modules []manifestInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	hasAnyArchived := false
 	inputs := make([]SARIFInput, 0, len(modules))
 	cwd, _ := os.Getwd()
@@ -365,7 +369,7 @@ func runRecursiveSARIF(modules []moduleInfo, statusMap map[string]RepoStatus, cf
 	for _, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
 
-		il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.IgnoreFile, cfg.IgnoreInline)
+		il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
 		if il.Len() > 0 {
 			results, _ = il.FilterResults(results)
 		}
@@ -375,7 +379,7 @@ func runRecursiveSARIF(modules []moduleInfo, statusMap map[string]RepoStatus, cf
 		}
 
 		inputs = append(inputs, SARIFInput{
-			GomodURI:   sarifGomodURI(cwd, mi.gomodPath),
+			GomodURI:   sarifGomodURI(cwd, mi.manifestPath),
 			Results:    results,
 			Deprecated: getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated),
 		})
@@ -386,14 +390,14 @@ func runRecursiveSARIF(modules []moduleInfo, statusMap map[string]RepoStatus, cf
 }
 
 // runRecursiveMarkdown outputs recursive results as Markdown with per-module headers.
-func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
+func runRecursiveMarkdown(modules []manifestInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	hasAnyArchived := false
 
 	for i, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
 
 		// Apply ignore list
-		il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.IgnoreFile, cfg.IgnoreInline)
+		il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
 		if il.Len() > 0 {
 			var ignored []RepoStatus
 			results, ignored = il.FilterResults(results)
@@ -420,7 +424,7 @@ func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus,
 
 		var fileMatches map[string][]FileMatch
 		if cfg.Files && hasArchived {
-			fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
+			fm, err := ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports: %v\n", err)
 			} else {
@@ -432,7 +436,7 @@ func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus,
 		stale := filterStale(cfg, results)
 
 		if cfg.Tree && hasArchived {
-			graph, err := parseModGraph(filepath.Dir(mi.gomodPath), cfg.GoVersion)
+			graph, err := parseModGraph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", err)
 			} else {
@@ -463,14 +467,14 @@ func runRecursiveMarkdown(modules []moduleInfo, statusMap map[string]RepoStatus,
 }
 
 // runRecursiveText outputs recursive results as text with per-module headers.
-func runRecursiveText(modules []moduleInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
+func runRecursiveText(modules []manifestInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	hasAnyArchived := false
 
 	for i, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
 
 		// Apply ignore list
-		il := BuildIgnoreList(filepath.Dir(mi.gomodPath), cfg.IgnoreFile, cfg.IgnoreInline)
+		il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
 		if il.Len() > 0 {
 			var ignored []RepoStatus
 			results, ignored = il.FilterResults(results)
@@ -497,7 +501,7 @@ func runRecursiveText(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 
 		var fileMatches map[string][]FileMatch
 		if cfg.Files && hasArchived {
-			fm, err := ScanImports(filepath.Dir(mi.gomodPath), archivedPaths)
+			fm, err := ScanImports(filepath.Dir(mi.manifestPath), archivedPaths)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not scan imports: %v\n", err)
 			} else {
@@ -509,7 +513,7 @@ func runRecursiveText(modules []moduleInfo, statusMap map[string]RepoStatus, cfg
 		stale := filterStale(cfg, results)
 
 		if cfg.Tree && hasArchived {
-			graph, err := parseModGraph(filepath.Dir(mi.gomodPath), cfg.GoVersion)
+			graph, err := parseModGraph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
 			if err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", err)
 			} else {

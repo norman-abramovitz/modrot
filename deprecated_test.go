@@ -297,7 +297,7 @@ func TestCheckDeprecationsAcrossModules_WorkerPool(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	modules := []moduleInfo{
+	modules := []manifestInfo{
 		{
 			allModules: []Module{
 				{Path: "github.com/golang/protobuf", Version: "v1.5.4"},
@@ -330,7 +330,7 @@ func TestCheckDeprecationsAcrossModules_WorkerPool(t *testing.T) {
 }
 
 func TestCheckDeprecationsAcrossModules_WorkerPool_Empty(t *testing.T) {
-	modules := []moduleInfo{}
+	modules := []manifestInfo{}
 
 	r := &resolver{client: http.DefaultClient, proxyBaseURL: "http://unused"}
 	count := checkDeprecationsAcrossModulesWithResolver(modules, r)
