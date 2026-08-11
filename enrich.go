@@ -195,9 +195,7 @@ func enrichFreshnessWithResolver(modules []Module, maxWorkers int, r *resolver) 
 			m := modules[i]
 			res := result{idx: i}
 			res.latestVersion, res.latestTime, _ = r.fetchLatestInfo(m.Path)
-			if res.latestVersion != "" && res.latestVersion != m.Version {
-				res.versionTime = r.fetchVersionInfo(m.Path, m.Version)
-			}
+			res.versionTime = versionPublishTime(r, m.Path, m.Version, res.latestVersion, res.latestTime)
 			results <- res
 		}(idx)
 	}
@@ -216,10 +214,21 @@ func enrichFreshnessWithResolver(modules []Module, maxWorkers int, r *resolver) 
 	}
 }
 
-// enrichFreshnessAcrossModules enriches all modules across multiple manifestInfo
-// entries (for --recursive --freshness), deduplicating by module path+version.
-func enrichFreshnessAcrossModules(modules []manifestInfo) {
-	enrichFreshnessAcrossModulesWithResolver(modules, newResolver())
+// versionPublishTime returns the publish time of the version actually required.
+// A module pinned at the latest version has no separate publish time to look
+// up — it is the time @latest already reported — so answering from latestTime
+// costs no extra request. Skipping it instead leaves VersionTime zero, which
+// hides long-dormant dependencies (the ones --age most wants to surface) from
+// every age-based view.
+func versionPublishTime(r *resolver, path, version, latestVersion string, latestTime time.Time) time.Time {
+	switch latestVersion {
+	case "":
+		return time.Time{}
+	case version:
+		return latestTime
+	default:
+		return r.fetchVersionInfo(path, version)
+	}
 }
 
 // enrichFreshnessAcrossModulesWithResolver is the internal implementation that accepts
@@ -271,9 +280,7 @@ func enrichFreshnessAcrossModulesWithResolver(modules []manifestInfo, r *resolve
 
 			res := enrichResult{key: key}
 			res.latestVersion, res.latestTime, _ = r.fetchLatestInfo(key.path)
-			if res.latestVersion != "" && res.latestVersion != key.version {
-				res.versionTime = r.fetchVersionInfo(key.path, key.version)
-			}
+			res.versionTime = versionPublishTime(r, key.path, key.version, res.latestVersion, res.latestTime)
 			results <- res
 		}(k)
 	}

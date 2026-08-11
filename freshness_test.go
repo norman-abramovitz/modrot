@@ -146,7 +146,10 @@ func TestEnrichFreshness(t *testing.T) {
 		case "/github.com/baz/qux/@latest":
 			_, _ = fmt.Fprint(w, `{"Version":"v2.0.0","Time":"2024-09-01T00:00:00Z"}`)
 		case "/github.com/baz/qux/@v/v2.0.0.info":
-			_, _ = fmt.Fprint(w, `{"Version":"v2.0.0","Time":"2024-09-01T00:00:00Z"}`)
+			// @latest already reported this version's publish time; asking
+			// again would be a wasted request.
+			t.Errorf("unexpected second request for the version already reported by @latest")
+			w.WriteHeader(500)
 		default:
 			w.WriteHeader(404)
 		}
@@ -172,13 +175,16 @@ func TestEnrichFreshness(t *testing.T) {
 		t.Error("foo/bar VersionTime should be set (version != latest)")
 	}
 
-	// baz/qux: current == latest, no version info fetch needed
+	// baz/qux: current == latest. No second request is needed, but the publish
+	// time is still known — @latest reported it — and it must be recorded, or
+	// a dependency that is at its latest version yet years old stays invisible
+	// to every age-based view.
 	if modules[1].LatestVersion != "v2.0.0" {
 		t.Errorf("baz/qux latest = %q, want v2.0.0", modules[1].LatestVersion)
 	}
-	// version == latest → we skip fetchVersionInfo, so VersionTime stays zero
-	if !modules[1].VersionTime.IsZero() {
-		t.Error("baz/qux VersionTime should be zero (current == latest)")
+	wantTime := time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC)
+	if !modules[1].VersionTime.Equal(wantTime) {
+		t.Errorf("baz/qux VersionTime = %v, want %v (latest publish time)", modules[1].VersionTime, wantTime)
 	}
 }
 
@@ -294,5 +300,86 @@ func TestFormatAge(t *testing.T) {
 	m = Module{}
 	if got := formatAge(cfg, m); got != "" {
 		t.Errorf("formatAge(zero) = %q, want empty", got)
+	}
+}
+
+// ageProxyServer serves one archived GitHub module that is pinned at its own
+// latest version, published long ago — the shape --age exists to surface.
+func ageProxyServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/github.com/dead/lib/@latest":
+			_, _ = fmt.Fprint(w, `{"Version":"v1.0.0","Time":"2018-03-08T00:00:00Z"}`)
+		case "/gopkg.in/yaml.v2/@latest":
+			_, _ = fmt.Fprint(w, `{"Version":"v2.4.0","Time":"2020-12-01T00:00:00Z"}`)
+		case "/gopkg.in/yaml.v2/@v/v2.2.8.info":
+			_, _ = fmt.Fprint(w, `{"Version":"v2.2.8","Time":"2020-01-21T00:00:00Z"}`)
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+}
+
+func ageTestConfig() *Config {
+	cfg := NewDefaultConfig()
+	cfg.Age = AgeConfig{Enabled: true, Years: 1}
+	cfg.Now = time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	return cfg
+}
+
+func ageTestModules() []Module {
+	return []Module{
+		{Path: "github.com/dead/lib", Version: "v1.0.0", Direct: true, Ecosystem: "go", Owner: "dead", Repo: "lib"},
+		{Path: "gopkg.in/yaml.v2", Version: "v2.2.8", Direct: true, Ecosystem: "go"},
+	}
+}
+
+// TestSplitUnitModules_FreshnessReachesGitHubCopies pins that the single-unit
+// path enriches before it splits. FilterGitHub copies Module values, so a
+// freshness pass that runs after the split leaves every GitHub-hosted module
+// with a zero VersionTime and OUTDATED permanently empty.
+func TestSplitUnitModules_FreshnessReachesGitHubCopies(t *testing.T) {
+	srv := ageProxyServer(t)
+	defer srv.Close()
+
+	mi := manifestInfo{eco: goEcosystem, allModules: ageTestModules()}
+	cfg := ageTestConfig()
+
+	github, nonGitHub := splitUnitModules(mi, cfg, &resolver{client: srv.Client(), proxyBaseURL: srv.URL})
+
+	if len(github) != 1 {
+		t.Fatalf("expected 1 GitHub module, got %d", len(github))
+	}
+	if github[0].VersionTime.IsZero() {
+		t.Fatal("GitHub module VersionTime is zero: freshness did not reach the split copies")
+	}
+	if !isOutdated(cfg, github[0]) {
+		t.Errorf("github.com/dead/lib should be outdated at %v", github[0].VersionTime)
+	}
+	if len(nonGitHub) != 1 {
+		t.Fatalf("expected 1 non-GitHub module, got %d", len(nonGitHub))
+	}
+}
+
+// TestPrepareUnits_FreshnessReachesGitHubCopies pins the same ordering for the
+// multi-unit (--recursive) path.
+func TestPrepareUnits_FreshnessReachesGitHubCopies(t *testing.T) {
+	srv := ageProxyServer(t)
+	defer srv.Close()
+
+	units := []manifestInfo{{eco: goEcosystem, allModules: ageTestModules()}}
+	cfg := ageTestConfig()
+
+	allGitHub := prepareUnits(units, cfg, &resolver{client: srv.Client(), proxyBaseURL: srv.URL})
+
+	if len(allGitHub) != 1 {
+		t.Fatalf("expected 1 unique GitHub module, got %d", len(allGitHub))
+	}
+	if units[0].githubModules[0].VersionTime.IsZero() {
+		t.Fatal("unit githubModules VersionTime is zero: freshness did not reach the split copies")
+	}
+	if !isOutdated(cfg, units[0].githubModules[0]) {
+		t.Errorf("github.com/dead/lib should be outdated at %v", units[0].githubModules[0].VersionTime)
 	}
 }

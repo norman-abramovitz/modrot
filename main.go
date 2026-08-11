@@ -317,19 +317,13 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 	_, _ = fmt.Fprintf(os.Stderr, "=== %s ===\n", unitHeader(mi, cfg))
 	warnUnsupported(mi, cfg)
 
-	// Filter to GitHub modules and deduplicate
-	githubModules, nonGitHubModules := FilterGitHub(mi.allModules, cfg.DirectOnly)
+	githubModules, nonGitHubModules := splitUnitModules(mi, cfg, newResolver())
 
 	// Enrich non-GitHub modules with proxy data. Only Go units: the proxy
 	// knows nothing about npm names, so it would answer every lookup with a
 	// miss and overwrite the SourceURL that the npm registry already supplied.
 	if len(nonGitHubModules) > 0 && mi.eco.Name == "go" {
 		EnrichNonGitHub(nonGitHubModules, 20)
-	}
-
-	// Enrich all modules with version data (skips already-enriched)
-	if (cfg.Freshness || cfg.Age.Enabled) && mi.eco.Name == "go" {
-		EnrichFreshness(mi.allModules, 20)
 	}
 
 	if len(githubModules) == 0 {
@@ -398,6 +392,20 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 	outputFlat(cfg, filepath.ToSlash(filepath.Dir(relPath)), sarifManifestDir(cwd, mi.manifestPath), results, nonGitHubModules, fileMatches, deprecatedModules, stale, ignoredResults, ignoreList)
 
 	return exitCode(hasArchived)
+}
+
+// splitUnitModules runs a unit's Go freshness pass, when requested, and then
+// splits its modules into GitHub-hosted and everything else.
+//
+// The order is load-bearing. FilterGitHub copies Module values, so freshness
+// written to mi.allModules after the split never reaches the copies the output
+// is built from — which is why every GitHub-hosted module used to carry a zero
+// VersionTime and could never appear in the OUTDATED section.
+func splitUnitModules(mi manifestInfo, cfg *Config, r *resolver) (github, nonGitHub []Module) {
+	if (cfg.Freshness || cfg.Age.Enabled) && mi.eco.Name == "go" {
+		enrichFreshnessWithResolver(mi.allModules, 20, r)
+	}
+	return FilterGitHub(mi.allModules, cfg.DirectOnly)
 }
 
 // applyIgnoreList builds and applies the ignore list, returning filtered results.
