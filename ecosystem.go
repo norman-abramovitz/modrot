@@ -169,17 +169,25 @@ func buildManifestInfos(dirs []string, rootDir string) ([]manifestInfo, int) {
 	return units, failed
 }
 
+// unitQualifier names what a unit is built with: the Go toolchain for a Go
+// unit, the ecosystem (plus its lockfile state) for anything else. Stamping a
+// Go toolchain onto an npm unit would be a lie in every output format, so the
+// header and the JSON field share this one answer.
+func unitQualifier(mi manifestInfo, cfg *Config) string {
+	if mi.eco.Name == "go" {
+		return cfg.GoToolchain
+	}
+	qualifier := mi.eco.Name
+	if mi.unlocked {
+		qualifier += ", unlocked"
+	}
+	return qualifier
+}
+
 // unitHeader renders the per-unit banner: which manifest, which project, and
 // which toolchain or ecosystem it belongs to.
 func unitHeader(mi manifestInfo, cfg *Config) string {
-	qualifier := cfg.GoToolchain
-	if mi.eco.Name != "go" {
-		qualifier = mi.eco.Name
-		if mi.unlocked {
-			qualifier += ", unlocked"
-		}
-	}
-	return fmt.Sprintf("%s — %s (%s)", filepath.ToSlash(mi.relPath), mi.moduleName, qualifier)
+	return fmt.Sprintf("%s — %s (%s)", filepath.ToSlash(mi.relPath), mi.moduleName, unitQualifier(mi, cfg))
 }
 
 // warnUnsupported reports the flags this unit's ecosystem cannot honor, once

@@ -293,3 +293,28 @@ func TestUnitHeader(t *testing.T) {
 		})
 	}
 }
+
+// The recursive JSON entry's go_version field must say the same thing the
+// text header says. Stamping the Go toolchain onto an npm unit reports a
+// toolchain that had nothing to do with resolving those dependencies.
+func TestUnitQualifier(t *testing.T) {
+	cfg := NewDefaultConfig()
+	cfg.GoToolchain = "go1.24.5"
+
+	tests := []struct {
+		name string
+		mi   manifestInfo
+		want string
+	}{
+		{"go", manifestInfo{eco: goEcosystem}, "go1.24.5"},
+		{"npm locked", manifestInfo{eco: npmEcosystem}, "npm"},
+		{"npm unlocked", manifestInfo{eco: npmEcosystem, unlocked: true}, "npm, unlocked"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := unitQualifier(tt.mi, cfg); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

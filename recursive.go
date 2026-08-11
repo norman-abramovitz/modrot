@@ -299,7 +299,7 @@ func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, c
 			out.Modules = append(out.Modules, RecursiveJSONTreeEntry{
 				GoMod:          mi.relPath,
 				ModulePath:     mi.moduleName,
-				GoVersion:      cfg.GoToolchain,
+				GoVersion:      unitQualifier(mi, cfg),
 				JSONTreeOutput: treeOut,
 			})
 		}
@@ -341,7 +341,7 @@ func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, c
 			out.Modules = append(out.Modules, RecursiveJSONEntry{
 				GoMod:      mi.relPath,
 				ModulePath: mi.moduleName,
-				GoVersion:  cfg.GoToolchain,
+				GoVersion:  unitQualifier(mi, cfg),
 				JSONOutput: jsonOut,
 			})
 		}
