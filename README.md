@@ -720,6 +720,10 @@ This triggers a GitHub Actions workflow that:
 
 npm and Bun units follow the same shape: parse `package.json` plus `bun.lock` or `package-lock.json` (falling back to the registry's `dist-tags.latest` with no lockfile), resolve each dependency's GitHub repo from its `repository` field, query the npm registry for deprecation notices, then join the same GitHub archive check and reporting pipeline used for Go.
 
+## Attribution
+
+This project was built with the assistance of [Claude](https://claude.ai), an AI assistant by [Anthropic](https://www.anthropic.com).
+
 ## License
 
 MIT
