@@ -5,32 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
-
-// findGoModFiles walks the directory tree rooted at dir and returns
-// paths to all go.mod files found. It skips vendor/, testdata/, and
-// hidden directories (names starting with ".").
-func findGoModFiles(dir string) ([]string, error) {
-	var paths []string
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			name := d.Name()
-			if name == "vendor" || name == "testdata" || (strings.HasPrefix(name, ".") && name != ".") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.Name() == "go.mod" {
-			paths = append(paths, path)
-		}
-		return nil
-	})
-	return paths, err
-}
 
 // applyStatus maps GitHub archive status from a global lookup onto
 // a set of modules from a specific go.mod file.
@@ -65,12 +40,12 @@ func getArchivedPaths(results []RepoStatus) []string {
 // manifestInfo holds parsed data for a single manifest unit: one go.mod, or
 // one package.json plus its lockfile.
 type manifestInfo struct {
-	eco           *Ecosystem //nolint:unused // populated by Task 11
-	manifestPath  string     // path to the primary manifest
-	files         []string   //nolint:unused // manifest base names read for this unit; populated by Task 11
+	eco           *Ecosystem
+	manifestPath  string // path to the primary manifest
+	files         []string
 	relPath       string
 	moduleName    string
-	unlocked      bool //nolint:unused // populated by Task 11
+	unlocked      bool
 	allModules    []Module
 	githubModules []Module
 	nonGHModules  []Module
@@ -106,61 +81,51 @@ func getDeprecatedModules(allModules []Module, directOnly bool, deprecatedMode b
 	return result
 }
 
-// runRecursive scans a directory tree for go.mod files, queries GitHub
-// once for all unique repos, and outputs per-module results.
+// runRecursive scans a directory tree for manifest units (go.mod and/or
+// package.json), queries GitHub once for all unique repos, and outputs
+// per-unit results.
 // Returns the exit code (0 = clean, 1 = archived found, 2 = error).
 func runRecursive(rootDir string, cfg *Config) int {
-	gomodPaths, err := findGoModFiles(rootDir)
+	dirs, err := findUnitDirs(rootDir)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error scanning directory: %v\n", err)
 		return 2
 	}
-	if len(gomodPaths) == 0 {
-		_, _ = fmt.Fprintf(os.Stderr, "No go.mod files found in %s\n", rootDir)
+	if len(dirs) == 0 {
+		_, _ = fmt.Fprintf(os.Stderr, "No go.mod or package.json files found in %s\n", rootDir)
 		return 2
 	}
 
-	// Phase 1: Parse all go.mod files
-	var modules []manifestInfo
-	for _, gp := range gomodPaths {
-		allMods, err := ParseGoMod(gp)
-		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Warning: skipping %s: %v\n", gp, err)
-			continue
-		}
-		modName, _ := ModuleName(gp)
-		rel, _ := filepath.Rel(rootDir, gp)
-		modules = append(modules, manifestInfo{
-			manifestPath: gp,
-			relPath:      rel,
-			moduleName:   modName,
-			allModules:   allMods,
-		})
+	modules := buildManifestInfos(dirs, rootDir)
+	if len(modules) == 0 {
+		_, _ = fmt.Fprintf(os.Stderr, "No valid manifests found.\n")
+		return 2
 	}
+	enrichUnits(modules, cfg)
 
-	// Phase 2: Resolve vanity imports (before filtering)
-	if cfg.Resolve {
-		resolved := resolveAcrossModules(modules)
-		if resolved > 0 {
-			_, _ = fmt.Fprintf(os.Stderr, "Resolved %d non-GitHub modules to GitHub repos.\n", resolved)
-		}
+	statusMap, err := checkUnitsOnGitHub(modules, cfg)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 2
 	}
-
-	// Phase 2.5: Check deprecations (before filtering)
-	if cfg.Deprecated {
-		count := checkDeprecationsAcrossModules(modules)
-		if count > 0 {
-			_, _ = fmt.Fprintf(os.Stderr, "Found %d deprecated %s.\n", count, pluralize(count, "module", "modules"))
-		}
+	if dispatchRecursiveOutput(modules, statusMap, cfg) {
+		return 1
 	}
+	return 0
+}
 
-	// Phase 3: Filter to GitHub modules and collect globally unique repos
+// checkUnitsOnGitHub filters every unit down to its GitHub modules,
+// collects the globally unique set of repos across all units, and queries
+// GitHub for their archive status once. It also runs the non-GitHub proxy
+// and freshness enrichment passes, which key off the same per-unit
+// githubModules/nonGHModules split. Returns owner/repo → RepoStatus.
+func checkUnitsOnGitHub(units []manifestInfo, cfg *Config) (map[string]RepoStatus, error) {
 	var allGitHub []Module
 	globalSeen := make(map[string]bool)
-	for i := range modules {
-		ghMods, nonGH := FilterGitHub(modules[i].allModules, cfg.DirectOnly)
-		modules[i].githubModules = ghMods
-		modules[i].nonGHModules = nonGH
+	for i := range units {
+		ghMods, nonGH := FilterGitHub(units[i].allModules, cfg.DirectOnly)
+		units[i].githubModules = ghMods
+		units[i].nonGHModules = nonGH
 
 		for _, m := range ghMods {
 			key := m.Owner + "/" + m.Repo
@@ -171,69 +136,50 @@ func runRecursive(rootDir string, cfg *Config) int {
 		}
 	}
 
-	// Phase 3.5: Enrich non-GitHub modules with proxy data
-	enrichAcrossModules(modules)
+	// Enrich non-GitHub modules with proxy data
+	enrichAcrossModules(units)
 
-	// Phase 3.6: Enrich all modules with freshness data (skips already-enriched)
+	// Enrich all modules with freshness data (skips already-enriched)
 	if cfg.Freshness {
-		enrichFreshnessAcrossModules(modules)
-	}
-
-	if len(modules) == 0 {
-		_, _ = fmt.Fprintf(os.Stderr, "No valid go.mod files found.\n")
-		return 2
+		enrichFreshnessAcrossModules(units)
 	}
 
 	if len(allGitHub) == 0 {
-		_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found across %d go.mod files.\n", len(modules))
-		if cfg.OutputFormat == "sarif" {
-			cwd, _ := os.Getwd()
-			inputs := make([]SARIFInput, 0, len(modules))
-			for _, mi := range modules {
-				inputs = append(inputs, SARIFInput{
-					GomodURI:   sarifGomodURI(cwd, mi.manifestPath),
-					Deprecated: getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated),
-				})
-			}
-			PrintSARIF(inputs)
-		}
-		return 0
+		_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found across %d %s.\n",
+			len(units), pluralize(len(units), "manifest", "manifests"))
+		return map[string]RepoStatus{}, nil
 	}
 
-	_, _ = fmt.Fprintf(os.Stderr, "Found %d go.mod files, checking %d unique GitHub repos...\n", len(modules), len(allGitHub))
+	_, _ = fmt.Fprintf(os.Stderr, "Found %d %s, checking %d unique GitHub repos...\n",
+		len(units), pluralize(len(units), "manifest", "manifests"), len(allGitHub))
 
-	// Query GitHub once for all unique repos
-	globalResults, err := CheckRepos(allGitHub, cfg.Workers)
+	results, err := CheckRepos(allGitHub, cfg.Workers)
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 2
+		return nil, err
 	}
 
-	// Build status map: owner/repo → RepoStatus
 	statusMap := make(map[string]RepoStatus)
-	for _, r := range globalResults {
+	for _, r := range results {
 		statusMap[r.Module.Owner+"/"+r.Module.Repo] = r
 	}
+	return statusMap, nil
+}
 
-	hasAnyArchived := false
-
+// dispatchRecursiveOutput renders every unit in the format selected by
+// cfg.OutputFormat and reports whether any archived dependency was found.
+func dispatchRecursiveOutput(units []manifestInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	switch cfg.OutputFormat {
 	case "quickfix":
-		hasAnyArchived = runRecursiveQuickfix(modules, statusMap, cfg)
+		return runRecursiveQuickfix(units, statusMap, cfg)
 	case "json":
-		hasAnyArchived = runRecursiveJSON(modules, statusMap, cfg)
+		return runRecursiveJSON(units, statusMap, cfg)
 	case "sarif":
-		hasAnyArchived = runRecursiveSARIF(modules, statusMap, cfg)
+		return runRecursiveSARIF(units, statusMap, cfg)
 	case "markdown":
-		hasAnyArchived = runRecursiveMarkdown(modules, statusMap, cfg)
+		return runRecursiveMarkdown(units, statusMap, cfg)
 	default:
-		hasAnyArchived = runRecursiveText(modules, statusMap, cfg)
+		return runRecursiveText(units, statusMap, cfg)
 	}
-
-	if hasAnyArchived {
-		return 1
-	}
-	return 0
 }
 
 // runRecursiveQuickfix outputs quickfix-format lines across all modules.

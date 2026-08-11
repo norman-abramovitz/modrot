@@ -1,81 +1,9 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
-
-func TestFindGoModFiles(t *testing.T) {
-	// Create a temp directory tree with go.mod files
-	root := t.TempDir()
-
-	// helper to create directories and files
-	writeFile := func(path string, data []byte) {
-		t.Helper()
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, data, 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// Root go.mod
-	writeFile(filepath.Join(root, "go.mod"), []byte("module example.com/root\n"))
-
-	// Subdirectory with go.mod
-	writeFile(filepath.Join(root, "api", "go.mod"), []byte("module example.com/root/api\n"))
-
-	// Nested subdirectory with go.mod (extra nested dir for structure)
-	if err := os.MkdirAll(filepath.Join(root, "sdk", "v2"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(filepath.Join(root, "sdk", "go.mod"), []byte("module example.com/root/sdk\n"))
-
-	// vendor/ should be skipped
-	writeFile(filepath.Join(root, "vendor", "lib", "go.mod"), []byte("module vendor/lib\n"))
-
-	// testdata/ should be skipped
-	writeFile(filepath.Join(root, "testdata", "go.mod"), []byte("module testdata/mod\n"))
-
-	// Hidden directory should be skipped
-	writeFile(filepath.Join(root, ".hidden", "go.mod"), []byte("module hidden/mod\n"))
-
-	paths, err := findGoModFiles(root)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Should find exactly 3: root, api, sdk
-	if len(paths) != 3 {
-		t.Fatalf("expected 3 go.mod files, got %d: %v", len(paths), paths)
-	}
-
-	// Verify the found paths are the expected ones
-	expected := map[string]bool{
-		filepath.Join(root, "go.mod"):        true,
-		filepath.Join(root, "api", "go.mod"): true,
-		filepath.Join(root, "sdk", "go.mod"): true,
-	}
-	for _, p := range paths {
-		if !expected[p] {
-			t.Errorf("unexpected go.mod found: %s", p)
-		}
-	}
-}
-
-func TestFindGoModFiles_NoGoMod(t *testing.T) {
-	root := t.TempDir()
-	paths, err := findGoModFiles(root)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(paths) != 0 {
-		t.Fatalf("expected 0 go.mod files, got %d", len(paths))
-	}
-}
 
 func TestApplyStatus(t *testing.T) {
 	statusMap := map[string]RepoStatus{

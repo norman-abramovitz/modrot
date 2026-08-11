@@ -259,47 +259,63 @@ func resolveInputPath() string {
 	return absPath
 }
 
-// runSingleModule runs the full pipeline for a single go.mod file.
-// Returns exit code: 0 = no archived deps, 1 = archived deps found, 2 = error.
+// runSingleModule scans one directory, reporting every manifest unit found.
+// With exactly one unit the output is the flat single-manifest form; with more
+// than one it uses the multi-manifest form.
+// Returns exit code: 0 = clean, 1 = archived deps found, 2 = error.
 func runSingleModule(cfg *Config, inputPath string) int {
-	gomodPath := inputPath
-	if info, err := os.Stat(gomodPath); err == nil && info.IsDir() {
-		gomodPath = filepath.Join(gomodPath, "go.mod")
+	dir := inputPath
+	info, statErr := os.Stat(dir)
+	if statErr != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", statErr)
+		return 2
+	}
+	if !info.IsDir() {
+		dir = filepath.Dir(dir)
 	}
 
-	allModules, err := ParseGoMod(gomodPath)
+	units := buildManifestInfos([]string{dir}, dir)
+	if len(units) == 0 {
+		_, _ = fmt.Fprintf(os.Stderr, "No go.mod or package.json found in %s\n", dir)
+		return 2
+	}
+
+	enrichUnits(units, cfg)
+	return reportUnits(units, cfg, dir)
+}
+
+// reportUnits renders every unit and returns the exit code. A single unit uses
+// the flat output path, which keeps existing single-module output — including
+// the flat --json document — byte-identical.
+func reportUnits(units []manifestInfo, cfg *Config, rootDir string) int {
+	if len(units) == 1 {
+		return runSingleUnit(units[0], cfg)
+	}
+	statusMap, err := checkUnitsOnGitHub(units, cfg)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 2
 	}
+	if dispatchRecursiveOutput(units, statusMap, cfg) {
+		return 1
+	}
+	return 0
+}
 
+// runSingleUnit runs the full pipeline for a single manifest unit, printing
+// the flat (non-monorepo) output.
+// Returns exit code: 0 = no archived deps, 1 = archived deps found, 2 = error.
+func runSingleUnit(mi manifestInfo, cfg *Config) int {
 	// Print module header
-	modName, _ := ModuleName(gomodPath)
 	cwd, _ := os.Getwd()
-	relPath, relErr := filepath.Rel(cwd, gomodPath)
+	relPath, relErr := filepath.Rel(cwd, mi.manifestPath)
 	if relErr != nil {
-		relPath = gomodPath
+		relPath = mi.manifestPath
 	}
-	_, _ = fmt.Fprintf(os.Stderr, "=== %s — %s (%s) ===\n", relPath, modName, goToolchainVersion())
-
-	// Resolve vanity imports to GitHub repos
-	if cfg.Resolve {
-		resolved := ResolveVanityImports(allModules, 20)
-		if resolved > 0 {
-			_, _ = fmt.Fprintf(os.Stderr, "Resolved %d non-GitHub modules to GitHub repos.\n", resolved)
-		}
-	}
-
-	// Check for deprecated modules via proxy
-	if cfg.Deprecated {
-		count := CheckDeprecations(allModules, 20)
-		if count > 0 {
-			_, _ = fmt.Fprintf(os.Stderr, "Found %d deprecated %s.\n", count, pluralize(count, "module", "modules"))
-		}
-	}
+	_, _ = fmt.Fprintf(os.Stderr, "=== %s — %s (%s) ===\n", relPath, mi.moduleName, goToolchainVersion())
 
 	// Filter to GitHub modules and deduplicate
-	githubModules, nonGitHubModules := FilterGitHub(allModules, cfg.DirectOnly)
+	githubModules, nonGitHubModules := FilterGitHub(mi.allModules, cfg.DirectOnly)
 
 	// Enrich non-GitHub modules with proxy data
 	if len(nonGitHubModules) > 0 {
@@ -308,15 +324,15 @@ func runSingleModule(cfg *Config, inputPath string) int {
 
 	// Enrich all modules with version data (skips already-enriched)
 	if cfg.Freshness || cfg.Age.Enabled {
-		EnrichFreshness(allModules, 20)
+		EnrichFreshness(mi.allModules, 20)
 	}
 
 	if len(githubModules) == 0 {
-		_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found in %s\n", gomodPath)
+		_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found in %s\n", mi.manifestPath)
 		if cfg.OutputFormat == "sarif" {
 			PrintSARIF([]SARIFInput{{
 				GomodURI:   filepath.ToSlash(relPath),
-				Deprecated: collectDeprecated(cfg, allModules),
+				Deprecated: collectDeprecated(cfg, mi.allModules),
 			}})
 		}
 		return 0
@@ -332,7 +348,7 @@ func runSingleModule(cfg *Config, inputPath string) int {
 	}
 
 	// Apply ignore list
-	results, ignoredResults, ignoreList := applyIgnoreList(cfg, results, gomodPath)
+	results, ignoredResults, ignoreList := applyIgnoreList(cfg, results, mi.manifestPath)
 
 	// Collect archived module paths
 	hasArchived, archivedModulePaths := findArchived(results)
@@ -340,7 +356,7 @@ func runSingleModule(cfg *Config, inputPath string) int {
 	// Scan source files for imports of archived modules
 	var fileMatches map[string][]FileMatch
 	if cfg.Files && hasArchived {
-		fm, scanErr := ScanImports(filepath.Dir(gomodPath), archivedModulePaths)
+		fm, scanErr := mi.eco.ScanImports(filepath.Dir(mi.manifestPath), archivedModulePaths)
 		if scanErr != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Error scanning imports: %v\n", scanErr)
 			return 2
@@ -349,18 +365,18 @@ func runSingleModule(cfg *Config, inputPath string) int {
 	}
 
 	// Collect deprecated modules for output
-	deprecatedModules := collectDeprecated(cfg, allModules)
+	deprecatedModules := collectDeprecated(cfg, mi.allModules)
 
 	// Filter stale modules (non-archived repos with old push dates)
 	stale := filterStale(cfg, results)
 
 	// Handle --tree mode
 	if cfg.Tree && hasArchived {
-		graph, graphErr := parseModGraph(filepath.Dir(gomodPath), cfg.GoVersion)
+		graph, graphErr := parseModGraph(filepath.Dir(mi.manifestPath), cfg.GoVersion)
 		if graphErr != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", graphErr)
 		} else {
-			outputTree(cfg, results, graph, allModules, fileMatches, nonGitHubModules, deprecatedModules, stale, ignoredResults, ignoreList)
+			outputTree(cfg, results, graph, mi.allModules, fileMatches, nonGitHubModules, deprecatedModules, stale, ignoredResults, ignoreList)
 			return exitCode(hasArchived)
 		}
 	}

@@ -108,3 +108,99 @@ func TestNPMEcosystemHasNoGraph(t *testing.T) {
 		t.Error("goEcosystem.Graph should be set")
 	}
 }
+
+func TestBuildManifestInfos(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(testGoMod), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(testPackageJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	units := buildManifestInfos([]string{root}, root)
+	if len(units) != 2 {
+		t.Fatalf("got %d units, want 2", len(units))
+	}
+	if units[0].eco.Name != "go" || units[1].eco.Name != "npm" {
+		t.Fatalf("order = %s, %s; want go, npm", units[0].eco.Name, units[1].eco.Name)
+	}
+	if units[0].moduleName != "example.com/app" {
+		t.Errorf("go unit name = %q", units[0].moduleName)
+	}
+	if units[1].moduleName != "my-app" {
+		t.Errorf("npm unit name = %q", units[1].moduleName)
+	}
+	if !units[1].unlocked {
+		t.Error("npm unit should be unlocked (no lockfile written)")
+	}
+	if units[1].relPath != "package.json" {
+		t.Errorf("npm relPath = %q, want package.json", units[1].relPath)
+	}
+}
+
+// enrichUnits must deduplicate across manifests: a dependency shared by three
+// go.mod files costs one lookup, not three. This is the guarantee that
+// resolveAcrossModules and checkDeprecationsAcrossModules used to provide.
+func TestEnrichUnitsDeduplicatesAcrossUnits(t *testing.T) {
+	shared := Module{Path: "example.com/shared", Version: "v1.0.0", Ecosystem: "go", LineFile: "go.mod"}
+
+	var calls int
+	fake := &Ecosystem{
+		Name:      "go",
+		Manifests: []string{"go.mod"},
+		Resolve: func(mods []Module) int {
+			calls++
+			for i := range mods {
+				mods[i].Owner, mods[i].Repo = "acme", "shared"
+			}
+			return len(mods)
+		},
+		Deprecations: func(mods []Module) int { return 0 },
+	}
+	orig := ecosystems
+	ecosystems = []*Ecosystem{fake}
+	t.Cleanup(func() { ecosystems = orig })
+
+	// Same dependency in three units, direct in one and indirect in the others,
+	// at different lines.
+	a := shared
+	a.Direct, a.Line = true, 5
+	b := shared
+	b.Direct, b.Line = false, 11
+	c := shared
+	c.Direct, c.Line = false, 3
+
+	units := []manifestInfo{
+		{eco: fake, allModules: []Module{a}},
+		{eco: fake, allModules: []Module{b}},
+		{eco: fake, allModules: []Module{c}},
+	}
+
+	cfg := NewDefaultConfig()
+	cfg.Resolve = true
+	enrichUnits(units, cfg)
+
+	if calls != 1 {
+		t.Errorf("Resolve called %d times, want 1", calls)
+	}
+	// One lookup, but every location enriched.
+	for i, u := range units {
+		if u.allModules[0].Owner != "acme" || u.allModules[0].Repo != "shared" {
+			t.Errorf("unit %d not enriched: %+v", i, u.allModules[0])
+		}
+	}
+	// Per-location fields must survive the fan-out.
+	if !units[0].allModules[0].Direct {
+		t.Error("unit 0 lost Direct=true")
+	}
+	if units[1].allModules[0].Direct {
+		t.Error("unit 1 gained Direct=true")
+	}
+	wantLines := []int{5, 11, 3}
+	for i, want := range wantLines {
+		if got := units[i].allModules[0].Line; got != want {
+			t.Errorf("unit %d Line = %d, want %d", i, got, want)
+		}
+	}
+}

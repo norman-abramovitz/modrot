@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,4 +116,115 @@ func findUnitDirs(root string) ([]string, error) {
 		return nil
 	})
 	return dirs, err
+}
+
+// buildManifestInfos parses every unit in the given directories, in ecosystem
+// order within each directory. Units that fail to parse are reported and
+// skipped rather than aborting the scan.
+func buildManifestInfos(dirs []string, rootDir string) []manifestInfo {
+	var units []manifestInfo
+	for _, dir := range dirs {
+		for _, eco := range discoverUnits(dir) {
+			res, err := eco.Parse(dir)
+			if err != nil {
+				_, _ = fmt.Fprintf(os.Stderr, "Warning: skipping %s in %s: %v\n",
+					primaryManifest(eco), dir, err)
+				continue
+			}
+			if res == nil {
+				continue
+			}
+			manifestPath := filepath.Join(dir, res.Primary)
+			rel, relErr := filepath.Rel(rootDir, manifestPath)
+			if relErr != nil {
+				rel = manifestPath
+			}
+			units = append(units, manifestInfo{
+				eco:          eco,
+				manifestPath: manifestPath,
+				files:        res.Files,
+				relPath:      rel,
+				moduleName:   res.Name,
+				unlocked:     res.Unlocked,
+				allModules:   res.Modules,
+			})
+		}
+	}
+	return units
+}
+
+// depKey identifies a dependency for deduplication across manifests.
+type depKey struct{ path, version string }
+
+// enrichUnits runs the resolve and deprecation phases per ecosystem.
+//
+// Dependencies are deduplicated by path and version across every unit before
+// any lookup, so a dependency shared by several manifests costs one network
+// round trip rather than one per manifest. This is the behavior the
+// per-ecosystem across-modules helpers used to provide; centralizing it here
+// gives both ecosystems the same guarantee from one implementation.
+//
+// Resolve runs before deprecations: for an unlocked npm unit it fills in the
+// version that the deprecation lookup then keys on.
+func enrichUnits(units []manifestInfo, cfg *Config) {
+	byEco := map[string][]int{}
+	for i := range units {
+		byEco[units[i].eco.Name] = append(byEco[units[i].eco.Name], i)
+	}
+
+	for _, eco := range ecosystems {
+		idxs := byEco[eco.Name]
+		if len(idxs) == 0 {
+			continue
+		}
+
+		// One representative Module per distinct dependency, plus every
+		// location it occurs at so results can be fanned back out.
+		var unique []Module
+		var keys []depKey
+		locations := map[depKey][][2]int{} // key -> []{unit index, module index}
+		for _, ui := range idxs {
+			for mi := range units[ui].allModules {
+				m := units[ui].allModules[mi]
+				k := depKey{m.Path, m.Version}
+				if _, seen := locations[k]; !seen {
+					unique = append(unique, m)
+					keys = append(keys, k)
+				}
+				locations[k] = append(locations[k], [2]int{ui, mi})
+			}
+		}
+		if len(unique) == 0 {
+			continue
+		}
+
+		if cfg.Resolve || eco.Name == "npm" {
+			// npm always resolves: repository.url is its only route to a repo.
+			if n := eco.Resolve(unique); n > 0 {
+				_, _ = fmt.Fprintf(os.Stderr, "Resolved %d %s %s to GitHub repos.\n",
+					n, eco.Name, pluralize(n, "dependency", "dependencies"))
+			}
+		}
+		if cfg.Deprecated {
+			if n := eco.Deprecations(unique); n > 0 {
+				_, _ = fmt.Fprintf(os.Stderr, "Found %d deprecated %s %s.\n",
+					n, eco.Name, pluralize(n, "package", "packages"))
+			}
+		}
+
+		// Copy only the enriched fields. Line, LineFile, Direct, and
+		// Ecosystem are per-location and must survive: the same dependency
+		// can be direct in one manifest and transitive in another, at
+		// different lines in different files.
+		for i, m := range unique {
+			for _, loc := range locations[keys[i]] {
+				dst := &units[loc[0]].allModules[loc[1]]
+				dst.Version = m.Version
+				dst.Owner = m.Owner
+				dst.Repo = m.Repo
+				dst.Deprecated = m.Deprecated
+				dst.SourceURL = m.SourceURL
+			}
+		}
+	}
 }
