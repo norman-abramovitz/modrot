@@ -78,15 +78,15 @@ func enrichNonGitHubWithResolver(modules []Module, maxWorkers int, r *resolver) 
 	}
 }
 
-// enrichAcrossModules enriches non-GitHub modules across multiple moduleInfo
+// enrichAcrossModules enriches non-GitHub modules across multiple manifestInfo
 // entries (for --recursive), deduplicating by module path+version.
-func enrichAcrossModules(modules []moduleInfo) {
+func enrichAcrossModules(modules []manifestInfo) {
 	enrichAcrossModulesWithResolver(modules, newResolver())
 }
 
 // enrichAcrossModulesWithResolver is the internal implementation that accepts
 // a resolver, allowing tests to inject mock HTTP servers.
-func enrichAcrossModulesWithResolver(modules []moduleInfo, r *resolver) {
+func enrichAcrossModulesWithResolver(modules []manifestInfo, r *resolver) {
 	type location struct {
 		miIdx  int
 		modIdx int
@@ -216,15 +216,15 @@ func enrichFreshnessWithResolver(modules []Module, maxWorkers int, r *resolver) 
 	}
 }
 
-// enrichFreshnessAcrossModules enriches all modules across multiple moduleInfo
+// enrichFreshnessAcrossModules enriches all modules across multiple manifestInfo
 // entries (for --recursive --freshness), deduplicating by module path+version.
-func enrichFreshnessAcrossModules(modules []moduleInfo) {
+func enrichFreshnessAcrossModules(modules []manifestInfo) {
 	enrichFreshnessAcrossModulesWithResolver(modules, newResolver())
 }
 
 // enrichFreshnessAcrossModulesWithResolver is the internal implementation that accepts
 // a resolver, allowing tests to inject mock HTTP servers.
-func enrichFreshnessAcrossModulesWithResolver(modules []moduleInfo, r *resolver) {
+func enrichFreshnessAcrossModulesWithResolver(modules []manifestInfo, r *resolver) {
 	type location struct {
 		miIdx  int
 		modIdx int

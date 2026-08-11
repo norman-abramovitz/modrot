@@ -58,14 +58,14 @@ func checkDeprecationsWithResolver(modules []Module, maxWorkers int, r *resolver
 }
 
 // checkDeprecationsAcrossModules checks deprecation across multiple
-// moduleInfo entries (for --recursive), deduplicating by path+version.
-func checkDeprecationsAcrossModules(modules []moduleInfo) int {
+// manifestInfo entries (for --recursive), deduplicating by path+version.
+func checkDeprecationsAcrossModules(modules []manifestInfo) int {
 	return checkDeprecationsAcrossModulesWithResolver(modules, newResolver())
 }
 
 // checkDeprecationsAcrossModulesWithResolver is the internal implementation that accepts
 // a resolver, allowing tests to inject mock HTTP servers.
-func checkDeprecationsAcrossModulesWithResolver(modules []moduleInfo, r *resolver) int {
+func checkDeprecationsAcrossModulesWithResolver(modules []manifestInfo, r *resolver) int {
 	// Collect unique module path+version and their locations.
 	type location struct {
 		miIdx  int // index into modules slice

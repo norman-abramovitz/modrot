@@ -308,7 +308,7 @@ func TestEnrichAcrossModules_WorkerPool(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	modules := []moduleInfo{
+	modules := []manifestInfo{
 		{
 			nonGHModules: []Module{
 				{Path: "golang.org/x/mod", Version: "v0.17.0"},
@@ -338,7 +338,7 @@ func TestEnrichAcrossModules_WorkerPool(t *testing.T) {
 }
 
 func TestEnrichAcrossModules_WorkerPool_Empty(t *testing.T) {
-	modules := []moduleInfo{
+	modules := []manifestInfo{
 		{
 			nonGHModules: []Module{},
 		},
