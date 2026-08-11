@@ -177,7 +177,15 @@ func unitHeader(mi manifestInfo, cfg *Config) string {
 // warnUnsupported reports the flags this unit's ecosystem cannot honor, once
 // per unit, so the user is never left wondering why a section is missing.
 func warnUnsupported(mi manifestInfo, cfg *Config) {
-	if (cfg.Tree || cfg.OutputFormat == "mermaid") && mi.eco.Graph == nil {
+	switch {
+	case cfg.OutputFormat == "mermaid" && mi.eco.Graph == nil:
+		// A Mermaid document is a graph and nothing else: with no graph
+		// source there is no flat form to fall back to, so the unit is
+		// omitted rather than printed as a table into the diagram.
+		_, _ = fmt.Fprintf(os.Stderr,
+			"Warning: --mermaid is not supported for %s (no dependency graph source); skipping %s\n",
+			mi.eco.Name, mi.relPath)
+	case cfg.Tree && mi.eco.Graph == nil:
 		_, _ = fmt.Fprintf(os.Stderr,
 			"Warning: --tree is not supported for %s (no dependency graph source); showing flat output for %s\n",
 			mi.eco.Name, mi.relPath)
