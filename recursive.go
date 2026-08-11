@@ -148,12 +148,21 @@ func runRecursive(rootDir string, cfg *Config) int {
 	return 0
 }
 
-// checkUnitsOnGitHub filters every unit down to its GitHub modules,
-// collects the globally unique set of repos across all units, and queries
-// GitHub for their archive status once. It also runs the non-GitHub proxy
-// and freshness enrichment passes, which key off the same per-unit
-// githubModules/nonGHModules split. Returns owner/repo → RepoStatus.
-func checkUnitsOnGitHub(units []manifestInfo, cfg *Config) (map[string]RepoStatus, error) {
+// prepareUnits runs the freshness pass, when requested, then splits every unit
+// into its GitHub-hosted and non-GitHub modules, returning the globally unique
+// set of GitHub modules to query.
+//
+// The order is load-bearing. FilterGitHub copies Module values, so freshness
+// written to allModules after the split never reaches the copies the output is
+// built from — which is why every GitHub-hosted module used to carry a zero
+// VersionTime and could never appear in the OUTDATED section. npm has no
+// equivalent of the Go module proxy's freshness endpoints, so npm units are
+// excluded rather than passed through.
+func prepareUnits(units []manifestInfo, cfg *Config, r *resolver) []Module {
+	if cfg.Freshness || cfg.Age.Enabled {
+		enrichFreshnessAcrossModulesWithResolver(goOnlyUnits(units), r)
+	}
+
 	var allGitHub []Module
 	globalSeen := make(map[string]bool)
 	for i := range units {
@@ -169,19 +178,22 @@ func checkUnitsOnGitHub(units []manifestInfo, cfg *Config) (map[string]RepoStatu
 			}
 		}
 	}
+	return allGitHub
+}
+
+// checkUnitsOnGitHub filters every unit down to its GitHub modules,
+// collects the globally unique set of repos across all units, and queries
+// GitHub for their archive status once. It also runs the non-GitHub proxy
+// and freshness enrichment passes, which key off the same per-unit
+// githubModules/nonGHModules split. Returns owner/repo → RepoStatus.
+func checkUnitsOnGitHub(units []manifestInfo, cfg *Config) (map[string]RepoStatus, error) {
+	allGitHub := prepareUnits(units, cfg, newResolver())
 
 	// Enrich non-GitHub modules with proxy data. Only Go units: the Go module
 	// proxy knows nothing about npm package names, so every npm lookup would
 	// miss and then overwrite the SourceURL the npm registry already gave us —
 	// while costing one request per package.
 	enrichAcrossModules(goOnlyUnits(units))
-
-	// Enrich all modules with freshness data (skips already-enriched).
-	// npm has no equivalent of the Go module proxy's freshness endpoints, so
-	// npm units are excluded rather than passed through.
-	if cfg.Freshness || cfg.Age.Enabled {
-		enrichFreshnessAcrossModules(goOnlyUnits(units))
-	}
 
 	if len(allGitHub) == 0 {
 		_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found across %d %s.\n",
