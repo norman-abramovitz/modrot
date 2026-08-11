@@ -526,8 +526,15 @@ func parseNPMUnit(dir string) (*ParseResult, error) {
 	}
 
 	for i := range directMods {
+		// A declared dependency the lockfile does not resolve still carries
+		// its RANGE. The registry's per-version endpoint 404s on a range,
+		// which the client reads as a definitive "no such package" and
+		// caches — so the dependency vanishes with no warning. Clear it, so
+		// resolve asks for dist-tags.latest exactly as the unlocked path does.
 		if v, ok := resolved[directMods[i].Path]; ok && v != "" {
 			directMods[i].Version = v
+		} else {
+			directMods[i].Version = ""
 		}
 	}
 

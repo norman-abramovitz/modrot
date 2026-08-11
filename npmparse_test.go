@@ -711,9 +711,58 @@ func TestParseNPMUnitWithLockfile(t *testing.T) {
 		t.Errorf("inflight: anchor = %s:%d, want package-lock.json:15", inf.LineFile, inf.Line)
 	}
 
-	// A direct dep absent from the lockfile keeps its declared range.
-	if got := byPath["typescript"].Version; got != "^5.0.0" {
-		t.Errorf("typescript: Version = %q, want ^5.0.0", got)
+	// A direct dep the lockfile does not resolve has its range cleared: the
+	// registry's per-version endpoint 404s on a range and the client caches
+	// that as a definitive "no such package", so the dependency would vanish
+	// silently. Clearing sends resolve to dist-tags.latest instead.
+	if got := byPath["typescript"].Version; got != "" {
+		t.Errorf("typescript: Version = %q, want \"\" (range cleared)", got)
+	}
+}
+
+// A lockfile stale relative to package.json — present, parseable, but missing
+// a declared dependency entirely — must clear that dependency's range rather
+// than leave it to 404 against the per-version registry endpoint.
+func TestParseNPMUnitStaleLockfileClearsRange(t *testing.T) {
+	const pkg = `{
+  "name": "my-app",
+  "dependencies": {
+    "xterm": "^5.3.0"
+  }
+}
+`
+	const lock = `{
+  "name": "my-app",
+  "lockfileVersion": 3,
+  "packages": {}
+}
+`
+	dir := t.TempDir()
+	writeFile(t, dir, "package.json", pkg)
+	writeFile(t, dir, "package-lock.json", lock)
+
+	res, err := parseNPMUnit(dir)
+	if err != nil {
+		t.Fatalf("parseNPMUnit: %v", err)
+	}
+	if res == nil {
+		t.Fatal("got nil result")
+	}
+	if res.Unlocked {
+		t.Error("Unlocked = true, want false (a lockfile is present)")
+	}
+	if len(res.Modules) != 1 {
+		t.Fatalf("got %d modules, want 1", len(res.Modules))
+	}
+	m := res.Modules[0]
+	if m.Path != "xterm" {
+		t.Fatalf("Path = %q, want xterm", m.Path)
+	}
+	if m.Version != "" {
+		t.Errorf("xterm: Version = %q, want \"\" (unresolved range cleared)", m.Version)
+	}
+	if !m.Direct {
+		t.Error("xterm: Direct = false, want true")
 	}
 }
 
