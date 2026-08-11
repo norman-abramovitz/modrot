@@ -66,7 +66,7 @@ Five of the six formats — table, JSON, Markdown, quickfix, and SARIF — work 
 | Flag | Description |
 |------|-------------|
 | `--direct-only` | Only check direct dependencies (skip indirect) |
-| `--ignore-file PATH` | Path to ignore file (default: `.modrotignore` next to `go.mod`) |
+| `--ignore-file PATH` | Path to ignore file (default: `.modrotignore` next to the unit's manifest) |
 | `--ignore MODULES` | Comma-separated list of module paths to ignore |
 | `--show-ignored` | Show ignored modules and their current state |
 | `--no-ignore` | Disable ignore lists (`.modrotignore` and `--ignore`) |
@@ -419,7 +419,7 @@ $ modrot --sarif --deprecated > modrot.sarif
     sarif_file: modrot.sarif
 ```
 
-The `|| true` keeps the workflow running when modrot exits 1 on archived findings, so the upload step still runs. Each archived dependency is reported as a `warning` and each deprecated dependency as a `note`, anchored to the exact `require` line in the scanned `go.mod` file (with `--recursive`, to each go.mod in the tree — a module required from several go.mod files becomes one result with a location per require site). SARIF paths are always relative to the current working directory, so run modrot from the repository root — e.g. `modrot --recursive --sarif . > modrot.sarif` — so the paths are repo-relative. Stale, age, and stats sections are not part of SARIF output.
+The `|| true` keeps the workflow running when modrot exits 1 on archived findings, so the upload step still runs. Each archived dependency is reported as a `warning` and each deprecated dependency as a `note`, anchored to the exact line that names it: the `require` line in `go.mod` for a Go unit, the `package.json` line for a direct npm dependency, the lockfile line (`package-lock.json` or `bun.lock`) for a transitive one. A dependency that appears in several manifests becomes one result with a location per site. SARIF paths are always relative to the current working directory, so run modrot from the repository root — e.g. `modrot --recursive --sarif . > modrot.sarif` — so the paths are repo-relative. Stale, age, and stats sections are not part of SARIF output.
 
 **Sorting** — sort archived dependencies by field and direction. Append `:asc` or `:desc` to control order. Each field has a natural default:
 
@@ -465,7 +465,7 @@ Colors apply to archived and stale table output only (not JSON, markdown, mermai
 
 ### Filtering and ignoring
 
-Create a `.modrotignore` file next to your `go.mod` to exclude specific modules. Add an inline comment after `#` to document why each module is ignored — these reasons are shown by `--show-ignored`:
+Create a `.modrotignore` file next to your `go.mod` or `package.json` to exclude specific modules. Add an inline comment after `#` to document why each module is ignored — these reasons are shown by `--show-ignored`:
 
 ```
 # Modules we've evaluated and accepted
@@ -592,15 +592,15 @@ for repo in ~/Projects/*/go.mod; do
 done | jq -s '[.[].archived[]] | group_by(.module) | map({module: .[0].module, count: length}) | sort_by(-.count)'
 ```
 
-This identifies the most common archived dependencies across your portfolio. For repos that are monorepos, add `--recursive` to scan all go.mod files within each repo.
+This identifies the most common archived dependencies across your portfolio. For repos that are monorepos, add `--recursive` to scan every manifest within each repo.
 
 ## Troubleshooting
 
 **"failed to get GitHub token (is gh installed and authenticated?)"**
 Install the [GitHub CLI](https://cli.github.com/) and run `gh auth login`.
 
-**"Error: could not parse go.mod"**
-Ensure the path points to a valid `go.mod` file or a directory containing one.
+**"Error: no manifest in ... could be parsed"**
+Ensure the path points to a valid `go.mod` or `package.json`, or a directory containing one. A `Warning: skipping ...` line above names the file that failed and why.
 
 **GitHub API rate limits**
 modrot batches queries (default 50 repos per request) to minimize API calls. If you hit rate limits on very large projects, reduce the batch size with `--workers 20`.
