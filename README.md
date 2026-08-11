@@ -59,7 +59,7 @@ If no path is given, looks in the current directory for `go.mod` and/or `package
 | `--quickfix` | Output `file:line:module` for editor quickfix (alias for `--format=quickfix`) |
 | `--sarif` | Output SARIF 2.1.0 for GitHub code scanning (alias for `--format=sarif`) |
 
-All six formats work for both Go and npm/Bun units.
+Five of the six formats — table, JSON, Markdown, quickfix, and SARIF — work for both Go and npm/Bun units. `--mermaid` is Go-only: it draws a dependency graph, and npm has no graph source wired up, so npm units are warned about and left out of the diagram.
 
 **Filtering:**
 
@@ -88,7 +88,7 @@ All six formats work for both Go and npm/Bun units.
 |------|-------------|
 | `--all` | Show all modules, not just archived ones |
 | `--tree` | Show ASCII dependency tree for archived modules (uses `go mod graph`) — Go only, warns and falls back to flat output for npm units |
-| `--files` | Show source files that import archived modules (requires `rg`) |
+| `--files` | Show source files that import archived modules (requires `rg`) — scans `.go` for Go units and `.js/.jsx/.ts/.tsx/.mjs/.cjs/.vue/.svelte` for npm/Bun units |
 | `--sort ORDER` | Sort: `name` (default asc), `duration` (default desc), `pushed` (default desc); append `:asc` or `:desc` to override |
 | `--time` | Include time in date output (2006-01-02 15:04:05 instead of 2006-01-02) |
 
@@ -354,7 +354,7 @@ modrot --json | jq -r '.archived[].module'
 modrot --json | jq '[.archived[] | select(.direct)] | length'
 ```
 
-**Editor quickfix** — navigate directly to each archived module's `require` line in `go.mod`, then to the source files importing it:
+**Editor quickfix** — navigate directly to each archived module's declaration line, then to the source files importing it. The declaration site is whichever manifest actually declares it: `go.mod` for a Go unit, `package.json` for a direct npm dependency, `package-lock.json` or `bun.lock` for a transitive one.
 
 ```
 $ modrot --quickfix
@@ -513,9 +513,9 @@ If a package.json directory has both a `package-lock.json` and a `bun.lock`, mod
 
 With no lockfile at all, modrot falls back to resolving each dependency's version against the npm registry's `dist-tags.latest` — the header for that unit reads `(npm, unlocked)` and a note explains the fallback. This is inherently less precise than a lockfile: it reports what installing today would get you, not what's actually pinned.
 
-Every distinct version of a package that appears across your manifests is reported, not just one — npm's dependency resolution genuinely installs multiple versions of the same package side by side, and a deprecation notice is a fact about one specific version, not the package as a whole.
+Every distinct version of a package installed across your manifests is parsed and checked — npm's dependency resolution genuinely installs multiple versions of the same package side by side, and a deprecation notice is a fact about one specific version, not the package as a whole. The DEPRECATED table reports each of those versions separately. The ARCHIVED table does not: being archived is a fact about a repository, so several versions of one package collapse into a single row keyed on the GitHub repo they resolve to.
 
-**What's Go-only in this release:** `--tree`, `--mermaid`, `--freshness`, and `--age` all warn and either fall back to flat output or skip the npm unit entirely — building a tree needs a dependency graph source, and npm has none wired up yet; freshness and age need the full npm packument, which isn't fetched. `--stale` does work for npm, since it reads GitHub's `pushedAt` on the resolved repo rather than anything registry-specific. `--direct-only`, `--sort`, `--stats`, `.modrotignore`, and all six output formats (table, JSON, Markdown, Mermaid's non-tree paths, quickfix, SARIF) work the same for both ecosystems.
+**What's Go-only in this release:** `--tree`, `--mermaid`, `--freshness`, and `--age` all warn and either fall back to flat output or skip the npm unit entirely — building a tree needs a dependency graph source, and npm has none wired up yet; freshness and age need the full npm packument, which isn't fetched. `--mermaid` is the strictest of the four: a Mermaid document is a graph and nothing else, so an npm unit is omitted from the diagram rather than rendered some other way. `--stale` does work for npm, since it reads GitHub's `pushedAt` on the resolved repo rather than anything registry-specific. `--direct-only`, `--sort`, `--stats`, `--files`, `.modrotignore`, and five of the six output formats (table, JSON, Markdown, quickfix, SARIF) work the same for both ecosystems.
 
 If the npm registry can't be reached for some packages, modrot warns that results are incomplete rather than silently reporting a false all-clear.
 
