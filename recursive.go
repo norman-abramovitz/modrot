@@ -51,15 +51,14 @@ type manifestInfo struct {
 	nonGHModules  []Module
 }
 
-// sarifGomodURI returns gomodPath relative to cwd, with forward slashes,
-// for use as a SARIF artifact location. Falls back to gomodPath unchanged
-// if it cannot be made relative to cwd.
-func sarifGomodURI(cwd, gomodPath string) string {
-	uri := gomodPath
-	if rel, err := filepath.Rel(cwd, gomodPath); err == nil {
-		uri = rel
+// sarifManifestDir returns the unit's directory relative to cwd, with forward
+// slashes, for use as the base of SARIF artifact locations.
+func sarifManifestDir(cwd, manifestPath string) string {
+	dir := filepath.Dir(manifestPath)
+	if rel, err := filepath.Rel(cwd, dir); err == nil {
+		dir = rel
 	}
-	return filepath.ToSlash(uri)
+	return filepath.ToSlash(dir)
 }
 
 // getDeprecatedModules returns modules with non-empty Deprecated field,
@@ -304,8 +303,8 @@ func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, c
 	return hasAnyArchived
 }
 
-// runRecursiveSARIF outputs one SARIF document covering all go.mod files,
-// each finding anchored to its own go.mod path.
+// runRecursiveSARIF outputs one SARIF document covering all manifest units,
+// each finding anchored to its own manifest file within its unit.
 func runRecursiveSARIF(modules []manifestInfo, statusMap map[string]RepoStatus, cfg *Config) bool {
 	hasAnyArchived := false
 	inputs := make([]SARIFInput, 0, len(modules))
@@ -324,9 +323,9 @@ func runRecursiveSARIF(modules []manifestInfo, statusMap map[string]RepoStatus, 
 		}
 
 		inputs = append(inputs, SARIFInput{
-			GomodURI:   sarifGomodURI(cwd, mi.manifestPath),
-			Results:    results,
-			Deprecated: getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated),
+			ManifestDir: sarifManifestDir(cwd, mi.manifestPath),
+			Results:     results,
+			Deprecated:  getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated),
 		})
 	}
 

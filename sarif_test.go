@@ -9,7 +9,7 @@ import (
 
 func TestBuildSARIF_ArchivedResult(t *testing.T) {
 	inputs := []SARIFInput{{
-		GomodURI: "go.mod",
+		ManifestDir: ".",
 		Results: []RepoStatus{
 			{
 				Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Direct: true, Owner: "foo", Repo: "bar"},
@@ -69,7 +69,7 @@ func TestBuildSARIF_ArchivedResult(t *testing.T) {
 }
 
 func TestBuildSARIF_NoFindings(t *testing.T) {
-	log := buildSARIF([]SARIFInput{{GomodURI: "go.mod"}})
+	log := buildSARIF([]SARIFInput{{ManifestDir: "."}})
 	if log.Runs[0].Results == nil {
 		t.Error("results must be non-nil (serializes as [] not null)")
 	}
@@ -80,7 +80,7 @@ func TestBuildSARIF_NoFindings(t *testing.T) {
 
 func TestBuildSARIF_ArchivedNoDates(t *testing.T) {
 	inputs := []SARIFInput{{
-		GomodURI: "go.mod",
+		ManifestDir: ".",
 		Results: []RepoStatus{{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
 			IsArchived: true,
@@ -94,7 +94,7 @@ func TestBuildSARIF_ArchivedNoDates(t *testing.T) {
 
 func TestBuildSARIF_Deprecated(t *testing.T) {
 	inputs := []SARIFInput{{
-		GomodURI: "go.mod",
+		ManifestDir: ".",
 		Deprecated: []Module{
 			{Path: "github.com/old/lib", Version: "v1.2.0", Deprecated: "use github.com/new/lib instead"},
 		},
@@ -125,7 +125,7 @@ func TestBuildSARIF_Deprecated(t *testing.T) {
 
 func TestPrintSARIF_ValidDocument(t *testing.T) {
 	inputs := []SARIFInput{{
-		GomodURI: "go.mod",
+		ManifestDir: ".",
 		Results: []RepoStatus{{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
 			IsArchived: true,
@@ -154,7 +154,7 @@ func TestPrintSARIF_ValidDocument(t *testing.T) {
 
 func TestPrintSARIF_EmptyInput(t *testing.T) {
 	output := captureStdout(t, func() {
-		PrintSARIF([]SARIFInput{{GomodURI: "go.mod"}})
+		PrintSARIF([]SARIFInput{{ManifestDir: "."}})
 	})
 
 	var doc map[string]any
@@ -181,14 +181,14 @@ func TestPrintSARIF_EmptyInput(t *testing.T) {
 func TestBuildSARIF_MultipleGoMods(t *testing.T) {
 	inputs := []SARIFInput{
 		{
-			GomodURI: "svc-a/go.mod",
+			ManifestDir: "svc-a",
 			Results: []RepoStatus{{
 				Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
 				IsArchived: true,
 			}},
 		},
 		{
-			GomodURI: "svc-b/go.mod",
+			ManifestDir: "svc-b",
 			Results: []RepoStatus{{
 				Module:     Module{Path: "github.com/foo/bar", Version: "v1.1.0", Owner: "foo", Repo: "bar"},
 				IsArchived: true,
@@ -226,14 +226,14 @@ func TestBuildSARIF_MultipleGoMods(t *testing.T) {
 func TestBuildSARIF_RequireLineRegions(t *testing.T) {
 	inputs := []SARIFInput{
 		{
-			GomodURI: "svc-a/go.mod",
+			ManifestDir: "svc-a",
 			Results: []RepoStatus{{
 				Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar", Line: 7},
 				IsArchived: true,
 			}},
 		},
 		{
-			GomodURI: "svc-b/go.mod",
+			ManifestDir: "svc-b",
 			Results: []RepoStatus{{
 				Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar", Line: 12},
 				IsArchived: true,
@@ -265,7 +265,7 @@ func TestBuildSARIF_RequireLineRegions(t *testing.T) {
 // region entirely (no bogus startLine 0) so file-level anchoring still works.
 func TestBuildSARIF_NoRegionWhenLineUnknown(t *testing.T) {
 	inputs := []SARIFInput{{
-		GomodURI: "go.mod",
+		ManifestDir: ".",
 		Results: []RepoStatus{{
 			Module:     Module{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar"},
 			IsArchived: true,
@@ -281,14 +281,14 @@ func TestBuildSARIF_NoRegionWhenLineUnknown(t *testing.T) {
 func TestBuildSARIF_MultipleGoMods_SameVersion(t *testing.T) {
 	inputs := []SARIFInput{
 		{
-			GomodURI: "svc-a/go.mod",
+			ManifestDir: "svc-a",
 			Results: []RepoStatus{{
 				Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
 				IsArchived: true,
 			}},
 		},
 		{
-			GomodURI: "svc-b/go.mod",
+			ManifestDir: "svc-b",
 			Results: []RepoStatus{{
 				Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
 				IsArchived: true,
@@ -330,7 +330,7 @@ func TestDeprecatedMessage_EmptyDeprecationText(t *testing.T) {
 // rule — so a future dedup change doesn't accidentally merge across rules.
 func TestBuildSARIF_ArchivedAndDeprecated(t *testing.T) {
 	inputs := []SARIFInput{{
-		GomodURI: "go.mod",
+		ManifestDir: ".",
 		Results: []RepoStatus{{
 			Module:     Module{Path: "github.com/foo/bar", Version: "v1.0.0", Owner: "foo", Repo: "bar"},
 			IsArchived: true,
@@ -349,5 +349,121 @@ func TestBuildSARIF_ArchivedAndDeprecated(t *testing.T) {
 	}
 	if run.Results[1].RuleID != ruleDeprecated {
 		t.Errorf("results[1].RuleID = %q, want %q", run.Results[1].RuleID, ruleDeprecated)
+	}
+}
+
+func TestBuildSARIFAnchorsNPMToItsOwnFile(t *testing.T) {
+	direct := Module{
+		Path: "xterm", Version: "5.3.0", Ecosystem: "npm",
+		Line: 5, LineFile: "package.json", Deprecated: "move to @xterm/xterm",
+	}
+	indirect := Module{
+		Path: "inflight", Version: "1.0.6", Ecosystem: "npm",
+		Line: 8842, LineFile: "package-lock.json", Deprecated: "use lru-cache",
+	}
+
+	log := buildSARIF([]SARIFInput{{
+		ManifestDir: "web",
+		Deprecated:  []Module{direct, indirect},
+	}})
+
+	uris := map[string]int{}
+	for _, r := range log.Runs[0].Results {
+		loc := r.Locations[0].PhysicalLocation
+		uris[loc.ArtifactLocation.URI] = loc.Region.StartLine
+	}
+	if got := uris["web/package.json"]; got != 5 {
+		t.Errorf("web/package.json startLine = %d, want 5", got)
+	}
+	if got := uris["web/package-lock.json"]; got != 8842 {
+		t.Errorf("web/package-lock.json startLine = %d, want 8842", got)
+	}
+}
+
+// Existing Go fingerprints must not change, or GitHub re-raises every alert.
+func TestBuildSARIFGoFingerprintsUnchanged(t *testing.T) {
+	m := Module{Path: "github.com/foo/bar", Version: "v1.0.0", Ecosystem: "go", Line: 5, LineFile: "go.mod"}
+	log := buildSARIF([]SARIFInput{{
+		ManifestDir: ".",
+		Results:     []RepoStatus{{Module: m, IsArchived: true}},
+		Deprecated:  []Module{m},
+	}})
+	want := map[string]bool{
+		"github.com/foo/bar:archived":   true,
+		"github.com/foo/bar:deprecated": true,
+	}
+	for _, r := range log.Runs[0].Results {
+		fp := r.PartialFingerprints["modrotFinding/v1"]
+		if !want[fp] {
+			t.Errorf("unexpected Go fingerprint %q", fp)
+		}
+	}
+}
+
+// One lockfile can name the same package at several lines, one per resolved
+// version. Deduping locations by URI alone would keep only the first, so a
+// deprecated version deeper in the file would never reach code scanning.
+func TestBuildSARIFKeepsEveryLineInOneManifest(t *testing.T) {
+	older := Module{
+		Path: "@babel/code-frame", Version: "7.29.0", Ecosystem: "npm",
+		Line: 500, LineFile: "bun.lock", Deprecated: "old",
+	}
+	newer := Module{
+		Path: "@babel/code-frame", Version: "8.0.0", Ecosystem: "npm",
+		Line: 1200, LineFile: "bun.lock", Deprecated: "old",
+	}
+
+	log := buildSARIF([]SARIFInput{{
+		ManifestDir: "web",
+		Deprecated:  []Module{older, newer},
+	}})
+
+	if n := len(log.Runs[0].Results); n != 1 {
+		t.Fatalf("got %d results, want 1 aggregated result", n)
+	}
+	locs := log.Runs[0].Results[0].Locations
+	if len(locs) != 2 {
+		t.Fatalf("got %d locations, want 2 (one per resolved version)", len(locs))
+	}
+	got := map[int]bool{}
+	for _, l := range locs {
+		if l.PhysicalLocation.ArtifactLocation.URI != "web/bun.lock" {
+			t.Errorf("uri = %q, want web/bun.lock", l.PhysicalLocation.ArtifactLocation.URI)
+		}
+		if l.PhysicalLocation.Region == nil {
+			t.Fatal("location has no region")
+		}
+		got[l.PhysicalLocation.Region.StartLine] = true
+	}
+	if !got[500] || !got[1200] {
+		t.Errorf("startLines = %v, want both 500 and 1200", got)
+	}
+}
+
+func TestBuildSARIFNPMFingerprintsPrefixed(t *testing.T) {
+	m := Module{Path: "xterm", Version: "5.3.0", Ecosystem: "npm", Line: 5, LineFile: "package.json"}
+	log := buildSARIF([]SARIFInput{{
+		ManifestDir: ".",
+		Results:     []RepoStatus{{Module: m, IsArchived: true}},
+	}})
+	got := log.Runs[0].Results[0].PartialFingerprints["modrotFinding/v1"]
+	if got != "npm:xterm:archived" {
+		t.Errorf("fingerprint = %q, want npm:xterm:archived", got)
+	}
+}
+
+// A Go module and an npm package sharing a name must stay separate results.
+func TestBuildSARIFDoesNotMergeAcrossEcosystems(t *testing.T) {
+	goMod := Module{Path: "shared", Ecosystem: "go", Line: 3, LineFile: "go.mod"}
+	npmPkg := Module{Path: "shared", Ecosystem: "npm", Line: 4, LineFile: "package.json"}
+	log := buildSARIF([]SARIFInput{{
+		ManifestDir: ".",
+		Results: []RepoStatus{
+			{Module: goMod, IsArchived: true},
+			{Module: npmPkg, IsArchived: true},
+		},
+	}})
+	if n := len(log.Runs[0].Results); n != 2 {
+		t.Fatalf("got %d results, want 2", n)
 	}
 }
