@@ -74,11 +74,19 @@ func goOnlyUnits(units []manifestInfo) []manifestInfo {
 	return goUnits
 }
 
+// unitIgnoreList builds a unit's ignore list, honouring --no-ignore.
+func unitIgnoreList(mi manifestInfo, cfg *Config) *IgnoreList {
+	if cfg.NoIgnore {
+		return NewIgnoreList()
+	}
+	return BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
+}
+
 // applyUnitIgnores applies a unit's ignore list to its results, returning the
 // surviving results, the ignored ones, and the list itself (which carries the
 // per-path reasons that --show-ignored prints).
 func applyUnitIgnores(mi manifestInfo, results []RepoStatus, cfg *Config) ([]RepoStatus, []RepoStatus, *IgnoreList) {
-	il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
+	il := unitIgnoreList(mi, cfg)
 	if il.Len() == 0 {
 		return results, nil, il
 	}
@@ -220,7 +228,7 @@ func runRecursiveQuickfix(modules []manifestInfo, statusMap map[string]RepoStatu
 	for _, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
 
-		il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
+		il := unitIgnoreList(mi, cfg)
 		if il.Len() > 0 {
 			results, _ = il.FilterResults(results)
 		}
@@ -252,7 +260,7 @@ func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, c
 			results := applyStatus(mi.githubModules, statusMap)
 
 			// Apply ignore list
-			il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
+			il := unitIgnoreList(mi, cfg)
 			if il.Len() > 0 {
 				results, _ = il.FilterResults(results)
 			}
@@ -306,7 +314,7 @@ func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, c
 			results := applyStatus(mi.githubModules, statusMap)
 
 			// Apply ignore list
-			il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
+			il := unitIgnoreList(mi, cfg)
 			if il.Len() > 0 {
 				results, _ = il.FilterResults(results)
 			}
@@ -356,7 +364,7 @@ func runRecursiveSARIF(modules []manifestInfo, statusMap map[string]RepoStatus, 
 	for _, mi := range modules {
 		results := applyStatus(mi.githubModules, statusMap)
 
-		il := BuildIgnoreList(filepath.Dir(mi.manifestPath), cfg.IgnoreFile, cfg.IgnoreInline)
+		il := unitIgnoreList(mi, cfg)
 		if il.Len() > 0 {
 			results, _ = il.FilterResults(results)
 		}

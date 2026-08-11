@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -140,5 +142,63 @@ func TestGetDeprecatedModules_NoneDeprecated(t *testing.T) {
 	result := getDeprecatedModules(modules, false, true)
 	if len(result) != 0 {
 		t.Errorf("expected 0 deprecated modules, got %d", len(result))
+	}
+}
+
+// --no-ignore was honoured only on the single-unit path, so every multi-unit
+// scan silently kept applying .modrotignore — dropping archived rows and
+// turning exit 1 into exit 0. reportUnits routes any directory with two or
+// more units here, so this hit plain non-recursive scans too.
+func TestUnitIgnoreListHonoursNoIgnore(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".modrotignore"),
+		[]byte("github.com/foo/bar\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mi := manifestInfo{manifestPath: filepath.Join(dir, "go.mod")}
+
+	cfg := NewDefaultConfig()
+	if got := unitIgnoreList(mi, cfg).Len(); got != 1 {
+		t.Fatalf("default: ignore list Len = %d, want 1", got)
+	}
+
+	cfg.NoIgnore = true
+	if got := unitIgnoreList(mi, cfg).Len(); got != 0 {
+		t.Errorf("--no-ignore: ignore list Len = %d, want 0", got)
+	}
+
+	// An inline --ignore must be dropped by --no-ignore too.
+	cfg.IgnoreInline = "github.com/baz/qux"
+	if got := unitIgnoreList(mi, cfg).Len(); got != 0 {
+		t.Errorf("--no-ignore with --ignore: Len = %d, want 0", got)
+	}
+}
+
+// A multi-unit scan must survive --no-ignore end to end: the archived row is
+// kept and the run still reports a finding.
+func TestApplyUnitIgnoresHonoursNoIgnore(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".modrotignore"),
+		[]byte("github.com/foo/bar\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mi := manifestInfo{manifestPath: filepath.Join(dir, "go.mod")}
+	results := []RepoStatus{
+		{Module: Module{Path: "github.com/foo/bar", Owner: "foo", Repo: "bar"}, IsArchived: true},
+	}
+
+	cfg := NewDefaultConfig()
+	kept, ignored, _ := applyUnitIgnores(mi, results, cfg)
+	if len(kept) != 0 || len(ignored) != 1 {
+		t.Fatalf("default: kept %d, ignored %d; want 0, 1", len(kept), len(ignored))
+	}
+
+	cfg.NoIgnore = true
+	kept, ignored, _ = applyUnitIgnores(mi, results, cfg)
+	if len(kept) != 1 || len(ignored) != 0 {
+		t.Errorf("--no-ignore: kept %d, ignored %d; want 1, 0", len(kept), len(ignored))
+	}
+	if len(getArchivedPaths(kept)) != 1 {
+		t.Error("--no-ignore: archived row lost, exit code would drop to 0")
 	}
 }
