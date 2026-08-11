@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
+	"strconv"
 	"strings"
 )
 
 // SARIF 2.1.0 output for GitHub code-scanning (issue #17, anchored to the
-// go.mod require line per issue #18). Structs are a hand-rolled subset of the
+// manifest line per issue #18). Structs are a hand-rolled subset of the
 // spec — only the fields code-scanning needs.
 
 const sarifSchemaURI = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
@@ -18,12 +20,36 @@ const (
 	ruleDeprecated = "deprecated-dependency"
 )
 
-// SARIFInput groups the findings for one scanned go.mod file.
-// GomodURI must be repo-relative with forward slashes.
+// SARIFInput groups the findings for one scanned manifest unit. ManifestDir
+// must be repo-relative with forward slashes; each finding's location resolves
+// to ManifestDir joined with the module's LineFile, since an npm unit anchors
+// direct dependencies to package.json and indirect ones to its lockfile.
 type SARIFInput struct {
-	GomodURI   string
-	Results    []RepoStatus
-	Deprecated []Module
+	ManifestDir string
+	Results     []RepoStatus
+	Deprecated  []Module
+}
+
+// locationURI returns the artifact URI for a module within this unit.
+func (in SARIFInput) locationURI(m Module) string {
+	file := m.LineFile
+	if file == "" {
+		file = "go.mod"
+	}
+	if in.ManifestDir == "" || in.ManifestDir == "." {
+		return file
+	}
+	return path.Join(in.ManifestDir, file)
+}
+
+// fingerprintPrefix namespaces npm findings so they cannot collide with a Go
+// module of the same name. Go findings keep their original fingerprints so
+// existing code-scanning alerts are not re-raised.
+func fingerprintPrefix(ecosystem string) string {
+	if ecosystem == "npm" {
+		return "npm:"
+	}
+	return ""
 }
 
 type sarifLog struct {
@@ -108,7 +134,7 @@ func sarifRules() []sarifRule {
 		{
 			ID:                   ruleDeprecated,
 			Name:                 "DeprecatedDependency",
-			ShortDescription:     sarifText{Text: "Dependency module is marked deprecated in its go.mod"},
+			ShortDescription:     sarifText{Text: "Dependency is marked deprecated by its registry"},
 			HelpURI:              repoURL + "#readme",
 			DefaultConfiguration: sarifLevel{Level: "note"},
 			Properties:           map[string]string{"security-severity": "3.0"},
@@ -116,9 +142,9 @@ func sarifRules() []sarifRule {
 	}
 }
 
-// sarifGomodLocation returns a location for the go.mod file, anchored to the
-// require line when known (line > 0) and file-level otherwise.
-func sarifGomodLocation(uri string, line int) sarifLocation {
+// sarifManifestLocation returns a location for a manifest file, anchored to
+// the manifest line when known (line > 0) and file-level otherwise.
+func sarifManifestLocation(uri string, line int) sarifLocation {
 	var region *sarifRegion
 	if line > 0 {
 		region = &sarifRegion{StartLine: line}
@@ -171,13 +197,14 @@ func deprecatedMessage(m Module) string {
 	return b.String()
 }
 
-// sarifAgg accumulates every occurrence of one (rule, module path) pair
-// across all scanned go.mod files, so buildSARIF can emit a single result
-// with multiple locations instead of one result per occurrence.
+// sarifAgg accumulates every occurrence of one (rule, ecosystem, module path)
+// tuple across all scanned manifest units, so buildSARIF can emit a single
+// result with multiple locations instead of one result per occurrence.
 type sarifAgg struct {
 	ruleID       string
 	level        string
 	isDeprecated bool
+	ecosystem    string
 	firstRS      RepoStatus // archived: repo data (dates) from the first occurrence
 	firstMod     Module     // deprecated: module data from the first occurrence
 	versions     map[string]bool
@@ -185,8 +212,8 @@ type sarifAgg struct {
 	locSeen      map[string]bool
 }
 
-// sarifOccurrence is one {go.mod file, require line} site where a module was
-// found. A module can occur across multiple go.mod files, so an aggregate
+// sarifOccurrence is one {manifest file, line} site where a module was
+// found. A module can occur across multiple manifest units, so an aggregate
 // keeps a list of these.
 type sarifOccurrence struct {
 	uri  string
@@ -197,14 +224,17 @@ func (a *sarifAgg) addLocation(uri string, line int) {
 	if a.locSeen == nil {
 		a.locSeen = map[string]bool{}
 	}
-	if !a.locSeen[uri] {
-		a.locSeen[uri] = true
+	// Keyed on uri AND line: one manifest can name the same package at
+	// several lines, and each is a distinct site a developer must visit.
+	key := uri + ":" + strconv.Itoa(line)
+	if !a.locSeen[key] {
+		a.locSeen[key] = true
 		a.locations = append(a.locations, sarifOccurrence{uri: uri, line: line})
 	}
 }
 
 // message builds this aggregate's human-readable message. When the module
-// occurred at more than one version across go.mod files, the version is
+// occurred at more than one version across manifest units, the version is
 // omitted rather than picking one arbitrarily.
 func (a *sarifAgg) message() string {
 	multiVersion := len(a.versions) > 1
@@ -236,11 +266,11 @@ func (a *sarifAgg) fingerprintSuffix() string {
 	return ":archived"
 }
 
-// buildSARIF assembles one SARIF run from per-go.mod inputs. Results is
+// buildSARIF assembles one SARIF run from per-manifest-unit inputs. Results is
 // always non-nil so it serializes as [] rather than null. Occurrences of
-// the same module (by rule + module path) across multiple go.mod files are
-// merged into a single result with one location per distinct go.mod, so
-// partialFingerprints stay unique per result.
+// the same module (by rule + ecosystem + module path) across multiple
+// manifest units are merged into a single result with one location per
+// distinct site, so partialFingerprints stay unique per result.
 func buildSARIF(inputs []SARIFInput) sarifLog {
 	var order []string
 	aggs := map[string]*sarifAgg{}
@@ -250,26 +280,26 @@ func buildSARIF(inputs []SARIFInput) sarifLog {
 			if !rs.IsArchived {
 				continue
 			}
-			key := ruleArchived + "|" + rs.Module.Path
+			key := ruleArchived + "|" + rs.Module.Ecosystem + "|" + rs.Module.Path
 			a, ok := aggs[key]
 			if !ok {
-				a = &sarifAgg{ruleID: ruleArchived, level: "warning", firstRS: rs, versions: map[string]bool{}}
+				a = &sarifAgg{ruleID: ruleArchived, level: "warning", ecosystem: rs.Module.Ecosystem, firstRS: rs, versions: map[string]bool{}}
 				aggs[key] = a
 				order = append(order, key)
 			}
 			a.versions[rs.Module.Version] = true
-			a.addLocation(in.GomodURI, rs.Module.Line)
+			a.addLocation(in.locationURI(rs.Module), rs.Module.Line)
 		}
 		for _, m := range in.Deprecated {
-			key := ruleDeprecated + "|" + m.Path
+			key := ruleDeprecated + "|" + m.Ecosystem + "|" + m.Path
 			a, ok := aggs[key]
 			if !ok {
-				a = &sarifAgg{ruleID: ruleDeprecated, level: "note", isDeprecated: true, firstMod: m, versions: map[string]bool{}}
+				a = &sarifAgg{ruleID: ruleDeprecated, level: "note", isDeprecated: true, ecosystem: m.Ecosystem, firstMod: m, versions: map[string]bool{}}
 				aggs[key] = a
 				order = append(order, key)
 			}
 			a.versions[m.Version] = true
-			a.addLocation(in.GomodURI, m.Line)
+			a.addLocation(in.locationURI(m), m.Line)
 		}
 	}
 
@@ -278,7 +308,7 @@ func buildSARIF(inputs []SARIFInput) sarifLog {
 		a := aggs[key]
 		locs := make([]sarifLocation, 0, len(a.locations))
 		for _, occ := range a.locations {
-			locs = append(locs, sarifGomodLocation(occ.uri, occ.line))
+			locs = append(locs, sarifManifestLocation(occ.uri, occ.line))
 		}
 		results = append(results, sarifResult{
 			RuleID:    a.ruleID,
@@ -286,7 +316,7 @@ func buildSARIF(inputs []SARIFInput) sarifLog {
 			Message:   sarifText{Text: a.message()},
 			Locations: locs,
 			PartialFingerprints: map[string]string{
-				"modrotFinding/v1": a.modulePath() + a.fingerprintSuffix(),
+				"modrotFinding/v1": fingerprintPrefix(a.ecosystem) + a.modulePath() + a.fingerprintSuffix(),
 			},
 		})
 	}

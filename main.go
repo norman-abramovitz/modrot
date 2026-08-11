@@ -330,8 +330,8 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 		_, _ = fmt.Fprintf(os.Stderr, "No GitHub modules found in %s\n", mi.manifestPath)
 		if cfg.OutputFormat == "sarif" {
 			PrintSARIF([]SARIFInput{{
-				GomodURI:   filepath.ToSlash(relPath),
-				Deprecated: collectDeprecated(cfg, mi.allModules),
+				ManifestDir: sarifManifestDir(cwd, mi.manifestPath),
+				Deprecated:  collectDeprecated(cfg, mi.allModules),
 			}})
 		}
 		return 0
@@ -381,7 +381,7 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 	}
 
 	// Output
-	outputFlat(cfg, filepath.ToSlash(relPath), results, nonGitHubModules, fileMatches, deprecatedModules, stale, ignoredResults, ignoreList)
+	outputFlat(cfg, filepath.ToSlash(relPath), sarifManifestDir(cwd, mi.manifestPath), results, nonGitHubModules, fileMatches, deprecatedModules, stale, ignoredResults, ignoreList)
 
 	return exitCode(hasArchived)
 }
@@ -485,7 +485,7 @@ func outputTree(cfg *Config, results []RepoStatus, graph map[string][]string, al
 }
 
 // outputFlat dispatches non-tree output to the appropriate format.
-func outputFlat(cfg *Config, gomodRel string, results []RepoStatus, nonGitHubModules []Module,
+func outputFlat(cfg *Config, gomodRel string, manifestDir string, results []RepoStatus, nonGitHubModules []Module,
 	fileMatches map[string][]FileMatch, deprecatedModules []Module,
 	stale []RepoStatus, ignoredResults []RepoStatus, ignoreList *IgnoreList) {
 
@@ -495,7 +495,7 @@ func outputFlat(cfg *Config, gomodRel string, results []RepoStatus, nonGitHubMod
 			PrintFilesPlain(gomodRel, results, fileMatches)
 		}
 	case "sarif":
-		PrintSARIF([]SARIFInput{{GomodURI: gomodRel, Results: results, Deprecated: deprecatedModules}})
+		PrintSARIF([]SARIFInput{{ManifestDir: manifestDir, Results: results, Deprecated: deprecatedModules}})
 		return
 	case "json":
 		PrintJSON(cfg, results, nonGitHubModules, fileMatches, stale, deprecatedModules)
