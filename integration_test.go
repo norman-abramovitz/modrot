@@ -126,3 +126,35 @@ func TestIntegration_MarkdownOutput(t *testing.T) {
 	// Markdown output may be empty for no-github-deps, that's fine
 	_ = stdout
 }
+
+func TestMixedRepoDiscovery(t *testing.T) {
+	root := filepath.Join("testdata", "fixtures", "mixed-repo")
+
+	dirs, err := findUnitDirs(root)
+	if err != nil {
+		t.Fatalf("findUnitDirs: %v", err)
+	}
+	units, _ := buildManifestInfos(dirs, root)
+	if len(units) != 2 {
+		t.Fatalf("got %d units, want 2", len(units))
+	}
+
+	names := map[string]bool{}
+	for _, u := range units {
+		names[u.eco.Name] = true
+		if len(u.allModules) == 0 {
+			t.Errorf("%s unit parsed no modules", u.eco.Name)
+		}
+		for _, m := range u.allModules {
+			if m.Ecosystem != u.eco.Name {
+				t.Errorf("%s: Ecosystem = %q, want %q", m.Path, m.Ecosystem, u.eco.Name)
+			}
+			if m.LineFile == "" {
+				t.Errorf("%s: LineFile is empty", m.Path)
+			}
+		}
+	}
+	if !names["go"] || !names["npm"] {
+		t.Errorf("discovered %v, want both go and npm", names)
+	}
+}
