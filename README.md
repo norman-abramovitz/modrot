@@ -2,7 +2,7 @@
 
 Detect archived GitHub dependencies and deprecated packages in Go, npm, and Bun projects.
 
-Parses your `go.mod` or `package.json`/lockfile, queries the GitHub GraphQL API in batches, and reports which dependencies have been archived upstream. A directory holding both `go.mod` and `package.json` is scanned as one unit — see [Go, npm, and Bun support](#go-npm-and-bun-support) below.
+Parses your `go.mod` or `package.json`/lockfile, queries the GitHub GraphQL API in batches, and reports which dependencies have been archived upstream. A directory holding both `go.mod` and `package.json` is scanned as two units under one exit code — see [Go, npm, and Bun support](#go-npm-and-bun-support) below.
 
 Archived dependencies no longer receive security patches, bug fixes, or compatibility updates. They can silently become liabilities — vulnerable to known exploits, incompatible with newer toolchains, or abandoned without a migration path. The sooner you know, the more options you have.
 
