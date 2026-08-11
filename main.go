@@ -55,25 +55,25 @@ func parseFlags() *Config {
 	formatFlag := flag.String("format", "table", "Output format: table, json, markdown, mermaid, quickfix, sarif")
 	jsonFlag := flag.Bool("json", false, "Output as JSON (alias for --format=json)")
 	markdownFlag := flag.Bool("markdown", false, "Output as GitHub-flavored Markdown (alias for --format=markdown)")
-	mermaidFlag := flag.Bool("mermaid", false, "Output Mermaid flowchart diagram (alias for --format=mermaid)")
+	mermaidFlag := flag.Bool("mermaid", false, "Output Mermaid flowchart diagram (alias for --format=mermaid) (Go only)")
 	quickfixFlag := flag.Bool("quickfix", false, "Output file:line:module for editor quickfix (alias for --format=quickfix)")
 	sarifFlag := flag.Bool("sarif", false, "Output SARIF 2.1.0 for GitHub code scanning (alias for --format=sarif)")
 
 	// Filtering flags
 	directOnly := flag.Bool("direct-only", false, "Only check direct dependencies")
-	ignoreFileFlag := flag.String("ignore-file", "", "Path to ignore file (default: .modrotignore next to go.mod)")
+	ignoreFileFlag := flag.String("ignore-file", "", "Path to ignore file (default: .modrotignore next to the manifest)")
 	ignoreFlag := flag.String("ignore", "", "Comma-separated list of module paths to ignore")
 	showIgnoredFlag := flag.Bool("show-ignored", false, "Show ignored modules and their current state")
 	noIgnoreFlag := flag.Bool("no-ignore", false, "Disable ignore lists (.modrotignore and --ignore)")
 
 	// Analysis flags
 	resolveFlag := flag.Bool("resolve", false, "Resolve vanity import paths (e.g. google.golang.org/grpc) to GitHub repos")
-	deprecatedFlag := flag.Bool("deprecated", false, "Check for deprecated modules via the Go module proxy")
-	freshnessFlag := flag.Bool("freshness", false, "Show latest available version and how far behind each dependency is")
+	deprecatedFlag := flag.Bool("deprecated", false, "Check for deprecated modules (Go module proxy for Go, npm registry for npm/Bun)")
+	freshnessFlag := flag.Bool("freshness", false, "Show latest available version and how far behind each dependency is (Go only)")
 
 	// Display flags
 	allFlag := flag.Bool("all", false, "Show all modules, not just archived ones")
-	treeFlag := flag.Bool("tree", false, "Show ASCII dependency tree for archived modules (uses go mod graph)")
+	treeFlag := flag.Bool("tree", false, "Show ASCII dependency tree for archived modules (uses go mod graph) (Go only)")
 	filesFlag := flag.Bool("files", false, "Show source files that import archived modules")
 	sortFlag := flag.String("sort", "name", "Sort: name[:asc|desc], duration[:asc|desc], pushed[:asc|desc]; name defaults asc, duration/pushed default desc")
 	timeFlag := flag.Bool("time", false, "Include time in date output (2006-01-02 15:04:05 instead of 2006-01-02)")
@@ -82,7 +82,7 @@ func parseFlags() *Config {
 	// Execution flags
 	workers := flag.Int("workers", 50, "Number of repos per GitHub GraphQL batch request")
 	goVersionFlag := flag.String("go-version", "", "Override the Go toolchain version from go.mod (e.g. 1.21.0)")
-	recursiveFlag := flag.Bool("recursive", false, "Scan all go.mod files in the directory tree")
+	recursiveFlag := flag.Bool("recursive", false, "Scan all manifests in the directory tree")
 	noColorFlag := flag.Bool("no-color", false, "Disable colored output (also respects NO_COLOR env var)")
 	colorThresholdFlag := flag.String("color-threshold", "", "Age thresholds for color: 2–4 values (default: 3m,1y,2y,5y)")
 
@@ -90,25 +90,26 @@ func parseFlags() *Config {
 	versionFlag := flag.Bool("version", false, "Print version information and exit")
 
 	flag.Usage = func() {
-		_, _ = fmt.Fprintf(os.Stderr, `Usage: modrot [flags] [path/to/go.mod | path/to/dir]
+		_, _ = fmt.Fprintf(os.Stderr, `Usage: modrot [flags] [path/to/go.mod | path/to/package.json | path/to/dir]
 
-Detect archived GitHub dependencies in a Go project.
+Detect archived GitHub dependencies in a Go, npm, or Bun project.
 
-With no flags, checks go.mod in the current directory and prints archived
-dependencies as a table. Exits 1 if any are found (useful for CI).
+With no flags, checks the go.mod and/or package.json in the current
+directory and prints archived dependencies as a table. Exits 1 if any
+are found (useful for CI).
 Flags can appear before or after the path argument.
 
 Output format:
   --format string       Output format: table, json, markdown, mermaid, quickfix, sarif (default "table")
   --json                Output as JSON (alias for --format=json)
   --markdown            Output as GitHub-flavored Markdown (alias for --format=markdown)
-  --mermaid             Output Mermaid flowchart diagram (alias for --format=mermaid)
+  --mermaid             Output Mermaid flowchart diagram (alias for --format=mermaid) (Go only)
   --quickfix            Output file:line:module for editor quickfix (alias for --format=quickfix)
   --sarif               Output SARIF 2.1.0 for GitHub code scanning (alias for --format=sarif)
 
 Filtering:
   --direct-only         Only check direct dependencies (useful for CI)
-  --ignore-file string  Path to ignore file (default: .modrotignore next to go.mod)
+  --ignore-file string  Path to ignore file (default: .modrotignore next to the manifest)
   --ignore string       Comma-separated list of module paths to ignore
   --show-ignored        Show ignored modules and their current state
   --no-ignore           Disable ignore lists (.modrotignore and --ignore)
@@ -116,15 +117,15 @@ Filtering:
 
 Analysis:
   --resolve             Resolve vanity import paths to GitHub repos (recommended)
-  --deprecated          Check for deprecated modules via the Go module proxy
-  --freshness           Show latest available version and how far behind each dependency is
-  --age[=THRESHOLD]     Show how old each dependency's version is (today minus publish date)
+  --deprecated          Check for deprecated modules (Go module proxy for Go, npm registry for npm/Bun)
+  --freshness           Show latest available version and how far behind each dependency is (Go only)
+  --age[=THRESHOLD]     Show how old each dependency's version is (today minus publish date) (Go only)
                           With threshold, show OUTDATED section (e.g. --age=18m, --age=1y6m)
   --duration[=DATE]     Show how long dependencies have been archived (default: today)
 
 Display:
   --all                 Show all modules, not just archived ones
-  --tree                Show ASCII dependency tree for archived modules (uses go mod graph)
+  --tree                Show ASCII dependency tree for archived modules (uses go mod graph) (Go only)
   --files               Show source files that import archived modules (requires rg)
   --sort string         Sort: name[:asc|desc], duration[:asc|desc], pushed[:asc|desc]
                           name defaults to asc (A-Z), duration and pushed default to desc (oldest first)
@@ -134,7 +135,7 @@ Display:
 Execution:
   --workers int         Number of repos per GitHub GraphQL batch request (default 50)
   --go-version string   Override the Go toolchain version from go.mod
-  --recursive           Scan all go.mod files in the directory tree (monorepos)
+  --recursive           Scan all manifests in the directory tree (monorepos)
   --no-color            Disable colored output (also respects NO_COLOR env var)
   --color-threshold     Age thresholds: 2–4 comma-separated values (default: 3m,1y,2y,5y)
                           2 values → 3 levels, 3 → 4 levels, 4 → 5 levels
@@ -155,7 +156,8 @@ Examples:
   modrot --tree --files                      ASCII dependency tree and affected files
   modrot --markdown --all --deprecated       Markdown for release notes
   modrot --json | jq '.archived[].module'    Scripting with JSON output
-  modrot --recursive /path/to/monorepo       Scan all go.mod files in a tree
+  modrot --recursive /path/to/monorepo       Scan every manifest in a tree
+  modrot --recursive --deprecated .          Scan Go and npm units in a repo
   modrot --sarif > modrot.sarif              SARIF for GitHub code scanning
 `)
 	}
