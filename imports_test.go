@@ -171,6 +171,30 @@ func TestParseRgOutput_Subpackage(t *testing.T) {
 	}
 }
 
+// TestParseRgOutput_MultipleImportsOnOneLine pins that every quoted path on a
+// matched line is considered. Taking only the first one drops later imports,
+// and drops the finding entirely when the first path is not searched for.
+func TestParseRgOutput_MultipleImportsOnOneLine(t *testing.T) {
+	modulePaths := []string{"github.com/foo/bar"}
+
+	rgOutput := `/proj/two.go:3:import _ "github.com/other/thing"; import _ "github.com/foo/bar"
+/proj/sub.go:4:import _ "github.com/foo/bar"; import _ "github.com/foo/bar/sub"
+/proj/dup.go:5:import _ "github.com/foo/bar"; import _ "github.com/foo/bar"
+`
+
+	got := parseRgOutput(rgOutput, "/proj", modulePaths)
+
+	want := []FileMatch{
+		{File: "dup.go", Line: 5, ImportPath: "github.com/foo/bar"},
+		{File: "sub.go", Line: 4, ImportPath: "github.com/foo/bar"},
+		{File: "sub.go", Line: 4, ImportPath: "github.com/foo/bar/sub"},
+		{File: "two.go", Line: 3, ImportPath: "github.com/foo/bar"},
+	}
+	if !reflect.DeepEqual(got["github.com/foo/bar"], want) {
+		t.Errorf("matches =\n  %+v\nwant:\n  %+v", got["github.com/foo/bar"], want)
+	}
+}
+
 func TestParseRgOutput_NoMatches(t *testing.T) {
 	got := parseRgOutput("", "/proj", []string{"github.com/foo/bar"})
 	if len(got) != 0 {

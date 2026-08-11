@@ -84,6 +84,12 @@ func parseRgOutput(output, projectDir string, modulePaths []string) map[string][
 		projectDir += "/"
 	}
 
+	// One physical line can carry more than one import. `import _ "a"; import
+	// _ "b"` is legal Go, and a factored import block can pair a path with a
+	// quoted comment. Taking only the first quoted path drops the rest
+	// silently — and if that first path is not one we were asked about, a real
+	// match on the line vanishes with no signal at all.
+	seen := make(map[string]bool)
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -97,24 +103,29 @@ func parseRgOutput(output, projectDir string, modulePaths []string) map[string][
 		// Make file path relative to project dir
 		relFile := strings.TrimPrefix(file, projectDir)
 
-		// Extract import path from the content
-		match := importRe.FindStringSubmatch(content)
-		if match == nil {
-			continue
-		}
-		importPath := match[1]
+		for _, match := range importRe.FindAllStringSubmatch(content, -1) {
+			importPath := match[1]
 
-		// Find the module this import belongs to (longest-prefix match)
-		modulePath := matchModule(importPath, sorted)
-		if modulePath == "" {
-			continue
-		}
+			// Find the module this import belongs to (longest-prefix match)
+			modulePath := matchModule(importPath, sorted)
+			if modulePath == "" {
+				continue
+			}
 
-		results[modulePath] = append(results[modulePath], FileMatch{
-			File:       relFile,
-			Line:       lineNum,
-			ImportPath: importPath,
-		})
+			// Distinct subpath imports on one line are distinct findings; the
+			// same import path twice on one line is not.
+			key := modulePath + "\x00" + relFile + "\x00" + strconv.Itoa(lineNum) + "\x00" + importPath
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+
+			results[modulePath] = append(results[modulePath], FileMatch{
+				File:       relFile,
+				Line:       lineNum,
+				ImportPath: importPath,
+			})
+		}
 	}
 
 	// Sort matches within each module by file then line
