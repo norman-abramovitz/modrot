@@ -485,7 +485,16 @@ func parseNPMUnit(dir string) (*ParseResult, error) {
 
 	lockName, lockMods := loadNPMLockfile(dir)
 	if lockName == "" {
+		// No lockfile, so package.json's constraint is a RANGE ("^5.3.0"),
+		// not a version. The registry's per-version endpoint 404s on a range,
+		// and the client reads a 404 as a definitive "no such version" — so
+		// leaving the range here makes every dependency silently vanish and
+		// produces a false all-clear. Clear it, so the resolve phase asks for
+		// dist-tags.latest and writes the real resolved version back.
 		res.Unlocked = true
+		for i := range directMods {
+			directMods[i].Version = ""
+		}
 		res.Modules = directMods
 		return res, nil
 	}
