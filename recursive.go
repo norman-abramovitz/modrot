@@ -224,6 +224,7 @@ func runRecursiveQuickfix(modules []manifestInfo, statusMap map[string]RepoStatu
 		if il.Len() > 0 {
 			results, _ = il.FilterResults(results)
 		}
+		warnUnsupported(mi, cfg)
 
 		archivedPaths := getArchivedPaths(results)
 		if len(archivedPaths) > 0 {
@@ -255,6 +256,7 @@ func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, c
 			if il.Len() > 0 {
 				results, _ = il.FilterResults(results)
 			}
+			warnUnsupported(mi, cfg)
 
 			archivedPaths := getArchivedPaths(results)
 			if len(archivedPaths) > 0 {
@@ -308,6 +310,7 @@ func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, c
 			if il.Len() > 0 {
 				results, _ = il.FilterResults(results)
 			}
+			warnUnsupported(mi, cfg)
 
 			archivedPaths := getArchivedPaths(results)
 			if len(archivedPaths) > 0 {
@@ -357,6 +360,7 @@ func runRecursiveSARIF(modules []manifestInfo, statusMap map[string]RepoStatus, 
 		if il.Len() > 0 {
 			results, _ = il.FilterResults(results)
 		}
+		warnUnsupported(mi, cfg)
 
 		if len(getArchivedPaths(results)) > 0 {
 			hasAnyArchived = true
