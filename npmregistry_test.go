@@ -310,3 +310,27 @@ func TestNPMClientCaches(t *testing.T) {
 		t.Errorf("server hit %d times, want 1", hits)
 	}
 }
+
+// A version that came from dist-tags.latest is pinned nowhere in the repo, so
+// it must be distinguishable from one the manifest or lockfile actually names.
+// Without the mark the two render identically and a stale lockfile looks
+// installed.
+func TestResolveNPMMarksInferredVersion(t *testing.T) {
+	srv := newTestNPMServer(t)
+	c := newNPMClient()
+	c.baseURL = srv.URL
+
+	mods := []Module{
+		{Path: "xterm", Version: "", Ecosystem: "npm"},
+		{Path: "xterm", Version: "5.3.0", Ecosystem: "npm"},
+	}
+	if got := resolveNPMWithClient(mods, c); got != 2 {
+		t.Fatalf("resolved %d, want 2", got)
+	}
+	if !mods[0].VersionInferred {
+		t.Error("unresolved dependency: VersionInferred = false, want true")
+	}
+	if mods[1].VersionInferred {
+		t.Error("lockfile-pinned dependency: VersionInferred = true, want false")
+	}
+}

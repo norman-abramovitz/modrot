@@ -24,6 +24,12 @@ type Module struct {
 	VersionTime   time.Time // publish time of current version from proxy
 	LatestTime    time.Time // publish time of latest version from proxy
 	SourceURL     string    // VCS URL from proxy Origin.URL
+
+	// VersionInferred marks a Version that came from the registry's
+	// dist-tags.latest rather than from a manifest or lockfile. Such a version
+	// is pinned nowhere in the repo, so it must not render as if it were
+	// installed.
+	VersionInferred bool
 }
 
 // ParseGoMod reads and parses a go.mod file, returning all required modules.

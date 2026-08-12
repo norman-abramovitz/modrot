@@ -246,6 +246,7 @@ func resolveNPMWithClient(modules []Module, c *npmClient) int {
 	resolved, failed := npmFetchAll(modules, c, func(m *Module, info *npmVersionInfo) bool {
 		if m.Version == "" && info.Version != "" {
 			m.Version = info.Version
+			m.VersionInferred = true
 		}
 		m.SourceURL = info.RepoURL
 		owner, repo := extractGitHubFromURL(info.RepoURL)
