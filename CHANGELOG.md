@@ -30,6 +30,17 @@ are always called out under **BREAKING** below.
   Go-only.
 - A warning when a manifest is found but cannot be parsed, distinct from the
   message for no manifest at all.
+- A mark on any version modrot resolved itself. A dependency the lockfile does
+  not pin is reported at the registry's `dist-tags.latest`, which is pinned
+  nowhere in the repo; it now renders as `~5.3.0` in tables and Markdown, sets
+  `"version_inferred": true` in JSON, and carries an explanatory clause in
+  SARIF.
+- A warning naming the packages the npm registry has no entry for. Dependencies
+  declared with a specifier the registry cannot answer for — `workspace:`,
+  `file:`, `link:`, `portal:`, `patch:`, `catalog:`, git and URL specifiers,
+  GitHub shorthand, and `npm:` aliases — are classified at parse time and never
+  looked up, so the remaining 404s mean something: a dependency that should be
+  published and is not. The exit code is unchanged.
 
 ### Changed
 
@@ -66,6 +77,11 @@ are always called out under **BREAKING** below.
 - `--quickfix` and `--sarif` disagreed on which directory their paths were
   relative to. Quickfix paths are now anchored to the working directory, and
   every path in one output stream shares a single base.
+- Enrichment results were fanned back out to each dependency's locations by
+  copying an enumerated list of fields, so any field added later was set on the
+  representative and then silently discarded before reaching output. This is the
+  same defect that left `--age` blank for GitHub-hosted modules; the copy is now
+  a single function with a test that pins the list.
 
 ## [0.9.0] - 2026-07-23
 
