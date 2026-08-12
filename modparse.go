@@ -30,6 +30,12 @@ type Module struct {
 	// is pinned nowhere in the repo, so it must not render as if it were
 	// installed.
 	VersionInferred bool
+
+	// NonRegistry marks a dependency declared with a specifier the registry
+	// cannot answer for — a workspace sibling, a local path, a tarball, a git
+	// checkout, an alias. It is excluded from registry lookups, which is what
+	// allows a 404 on everything else to be reported rather than swallowed.
+	NonRegistry bool
 }
 
 // ParseGoMod reads and parses a go.mod file, returning all required modules.

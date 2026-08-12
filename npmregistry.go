@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -40,14 +41,21 @@ type npmClient struct {
 
 	mu    sync.Mutex
 	cache map[string]*npmVersionInfo
+
+	// reported names the missing packages already warned about. Resolve and
+	// deprecation are two phases over one client, and a package the registry
+	// does not have is missing in both — but it is one problem, and naming it
+	// twice reads as two.
+	reported map[string]bool
 }
 
 // newNPMClient creates an npmClient with production defaults.
 func newNPMClient() *npmClient {
 	return &npmClient{
-		client:  &http.Client{Timeout: 10 * time.Second},
-		baseURL: "https://registry.npmjs.org",
-		cache:   make(map[string]*npmVersionInfo),
+		client:   &http.Client{Timeout: 10 * time.Second},
+		baseURL:  "https://registry.npmjs.org",
+		cache:    make(map[string]*npmVersionInfo),
+		reported: make(map[string]bool),
 	}
 }
 
@@ -173,19 +181,28 @@ func CheckNPMDeprecations(modules []Module) int {
 
 // npmFetchAll fetches every distinct package@version in modules concurrently
 // and applies apply to each module that has metadata. Returns the number of
-// modules apply reported as changed, and the number of distinct packages the
-// registry could not be consulted about.
-func npmFetchAll(modules []Module, c *npmClient, apply func(m *Module, info *npmVersionInfo) bool) (int, int) {
+// modules apply reported as changed, the number of distinct packages the
+// registry could not be consulted about, and the names of those it answered
+// about definitively but does not have.
+//
+// Dependencies declared with a non-registry specifier are skipped entirely.
+// The registry would 404 on all of them, and that meaningless 404 is
+// indistinguishable from the meaningful one — so without the skip, a genuinely
+// missing package could never be reported.
+func npmFetchAll(modules []Module, c *npmClient, apply func(m *Module, info *npmVersionInfo) bool) (int, int, []string) {
 	const maxWorkers = 20
 
 	type key struct{ name, version string }
 	locations := make(map[key][]int)
 	for i := range modules {
+		if modules[i].NonRegistry {
+			continue
+		}
 		k := key{modules[i].Path, modules[i].Version}
 		locations[k] = append(locations[k], i)
 	}
 	if len(locations) == 0 {
-		return 0, 0
+		return 0, 0, nil
 	}
 
 	type result struct {
@@ -212,13 +229,21 @@ func npmFetchAll(modules []Module, c *npmClient, apply func(m *Module, info *npm
 	close(results)
 
 	count, failed := 0, 0
+	var missing []string
 	for res := range results {
 		if !res.ok {
 			failed++
 			continue
 		}
 		if res.info == nil {
-			continue // registry has no such package or version
+			// A definitive answer that the registry has no such package or
+			// version. Every non-registry specifier was filtered out above, so
+			// this is an anomaly worth reporting: unpublished, renamed, or a
+			// typo in the manifest.
+			if !c.markReported(res.k.name) {
+				missing = append(missing, res.k.name)
+			}
+			continue
 		}
 		for _, idx := range locations[res.k] {
 			if apply(&modules[idx], res.info) {
@@ -226,7 +251,8 @@ func npmFetchAll(modules []Module, c *npmClient, apply func(m *Module, info *npm
 			}
 		}
 	}
-	return count, failed
+	sort.Strings(missing)
+	return count, failed, missing
 }
 
 // warnIncomplete tells the user how many packages could not be checked, so a
@@ -240,10 +266,27 @@ func warnIncomplete(failed int) {
 		failed, pluralize(failed, "package", "packages"))
 }
 
+// warnMissing names the packages the registry answered about definitively and
+// does not have. Non-registry specifiers never reach this point, so each name
+// here is a dependency the manifest expects to be published and is not:
+// unpublished, renamed, or misspelled. Reporting is deliberately a warning
+// rather than a non-zero exit — a missing package is a fact about the manifest,
+// not rot found in it, and changing the exit code would silently break CI
+// gates.
+func warnMissing(missing []string) {
+	if len(missing) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(os.Stderr,
+		"Warning: the npm registry has no entry for %d %s: %s\n",
+		len(missing), pluralize(len(missing), "package", "packages"),
+		strings.Join(missing, ", "))
+}
+
 // resolveNPMWithClient is the internal implementation, accepting a client so
 // tests can point at a mock registry.
 func resolveNPMWithClient(modules []Module, c *npmClient) int {
-	resolved, failed := npmFetchAll(modules, c, func(m *Module, info *npmVersionInfo) bool {
+	resolved, failed, missing := npmFetchAll(modules, c, func(m *Module, info *npmVersionInfo) bool {
 		if m.Version == "" && info.Version != "" {
 			m.Version = info.Version
 			m.VersionInferred = true
@@ -257,13 +300,14 @@ func resolveNPMWithClient(modules []Module, c *npmClient) int {
 		return true
 	})
 	warnIncomplete(failed)
+	warnMissing(missing)
 	return resolved
 }
 
 // checkNPMDeprecationsWithClient is the internal implementation, accepting a
 // client so tests can point at a mock registry.
 func checkNPMDeprecationsWithClient(modules []Module, c *npmClient) int {
-	found, failed := npmFetchAll(modules, c, func(m *Module, info *npmVersionInfo) bool {
+	found, failed, missing := npmFetchAll(modules, c, func(m *Module, info *npmVersionInfo) bool {
 		if info.Deprecated == "" {
 			return false
 		}
@@ -277,5 +321,18 @@ func checkNPMDeprecationsWithClient(modules []Module, c *npmClient) int {
 	// package when the keys DO coincide is a far smaller harm than leaving
 	// a package's deprecation status silently unchecked.
 	warnIncomplete(failed)
+	warnMissing(missing)
 	return found
+}
+
+// markReported records that a missing package has been warned about and
+// reports whether it already had been.
+func (c *npmClient) markReported(name string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.reported[name] {
+		return true
+	}
+	c.reported[name] = true
+	return false
 }

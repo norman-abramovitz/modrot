@@ -918,3 +918,97 @@ func TestParseNPMUnitNoPackageJSON(t *testing.T) {
 		t.Errorf("got %+v, want nil for a directory with no package.json", res)
 	}
 }
+
+// A package.json constraint is not always a registry version range. Local,
+// aliased and VCS specifiers name something npmjs.org has never heard of, so
+// looking them up yields a 404 that means "not a registry package", not "this
+// package vanished". Classifying them is what lets a real 404 be reported
+// instead of swallowed.
+func TestIsRegistrySpec(t *testing.T) {
+	tests := []struct {
+		spec string
+		want bool
+	}{
+		// Registry ranges.
+		{"^5.3.0", true},
+		{"~1.2.3", true},
+		{"1.2.3", true},
+		{">=1.0.0 <2.0.0", true},
+		{"1.x", true},
+		{"*", true},
+		{"", true},
+		{"latest", true},
+		{"next", true},
+		// Workspace and local paths.
+		{"workspace:*", false},
+		{"workspace:^1.0.0", false},
+		{"file:../ui", false},
+		{"file:./vendor/thing.tgz", false},
+		{"link:../shared", false},
+		{"portal:../shared", false},
+		{"patch:left-pad@1.3.0#./fix.patch", false},
+		{"catalog:", false},
+		{"catalog:react18", false},
+		// VCS and URL specifiers.
+		{"git+https://github.com/foo/bar.git", false},
+		{"git+ssh://git@github.com/foo/bar.git", false},
+		{"git://github.com/foo/bar.git", false},
+		{"https://example.com/pkg.tgz", false},
+		{"http://example.com/pkg.tgz", false},
+		{"github:foo/bar", false},
+		{"gitlab:foo/bar", false},
+		{"bitbucket:foo/bar", false},
+		// Bare GitHub shorthand.
+		{"foo/bar", false},
+		{"foo/bar#semver:^1.0.0", false},
+		// Aliases resolve to a different name than the key, so the key itself
+		// is not what the registry should be asked about.
+		{"npm:other-package@^1.0.0", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.spec, func(t *testing.T) {
+			if got := isRegistrySpec(tt.spec); got != tt.want {
+				t.Errorf("isRegistrySpec(%q) = %v, want %v", tt.spec, got, tt.want)
+			}
+		})
+	}
+}
+
+// The classification has to survive parsing, because parseNPMUnit later clears
+// an unresolved constraint to "" — after which nothing remains to tell a
+// workspace sibling from a package that should be on the registry.
+func TestParsePackageJSONMarksNonRegistryDeps(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "package.json", `{
+  "name": "my-app",
+  "dependencies": {
+    "xterm": "^5.3.0",
+    "ui": "workspace:*",
+    "shared": "file:../shared",
+    "forked": "git+https://github.com/foo/bar.git"
+  }
+}`)
+
+	_, mods, err := parsePackageJSON(path)
+	if err != nil {
+		t.Fatalf("parsePackageJSON: %v", err)
+	}
+
+	byPath := map[string]Module{}
+	for _, m := range mods {
+		byPath[m.Path] = m
+	}
+	for _, tt := range []struct {
+		path string
+		want bool
+	}{
+		{"xterm", false},
+		{"ui", true},
+		{"shared", true},
+		{"forked", true},
+	} {
+		if got := byPath[tt.path].NonRegistry; got != tt.want {
+			t.Errorf("%s: NonRegistry = %v, want %v", tt.path, got, tt.want)
+		}
+	}
+}

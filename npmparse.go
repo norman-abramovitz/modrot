@@ -133,6 +133,43 @@ type packageJSON struct {
 //
 // dependencies and devDependencies are direct; peerDependencies and
 // optionalDependencies are reported but not counted as direct.
+// nonRegistryPrefixes are the dependency-specifier protocols that name
+// something other than a package on the registry: a sibling directory, a
+// workspace member, a tarball, a git checkout, or a package published under a
+// different name. The registry has no entry to return for any of them, so
+// asking about them produces a 404 that says nothing about the dependency's
+// health.
+var nonRegistryPrefixes = []string{
+	"workspace:", "file:", "link:", "portal:", "patch:", "catalog:",
+	"git+", "git:", "https:", "http:",
+	"github:", "gitlab:", "bitbucket:",
+	// An alias installs a DIFFERENT package under this key, so the key is not
+	// the name to ask the registry about. Resolving the alias to its target
+	// would require rewriting the module's identity, which would break the
+	// package.json line anchor; treating it as non-registry preserves the
+	// existing behaviour of not reporting on it, minus the false 404.
+	"npm:",
+}
+
+// isRegistrySpec reports whether a package.json dependency constraint names a
+// package the npm registry is expected to have. Only specifiers that pass are
+// looked up, which is what makes a 404 on the rest meaningful.
+func isRegistrySpec(spec string) bool {
+	s := strings.TrimSpace(spec)
+	if s == "" {
+		return true // no constraint resolves through dist-tags.latest
+	}
+	for _, p := range nonRegistryPrefixes {
+		if strings.HasPrefix(s, p) {
+			return false
+		}
+	}
+	// GitHub shorthand ("owner/repo", optionally "#ref"). A registry range
+	// never contains a slash; a scoped NAME does, but this is the constraint,
+	// not the name.
+	return !strings.Contains(s, "/")
+}
+
 func parsePackageJSON(path string) (string, []Module, error) {
 	data, err := os.ReadFile(path) // #nosec G304 -- path comes from directory discovery
 	if err != nil {
@@ -155,12 +192,13 @@ func parsePackageJSON(path string) (string, []Module, error) {
 	add := func(section string, deps map[string]string, direct bool) {
 		for name, constraint := range deps {
 			mods = append(mods, Module{
-				Path:      name,
-				Version:   constraint,
-				Direct:    direct,
-				Line:      lines[section][name],
-				LineFile:  "package.json",
-				Ecosystem: "npm",
+				Path:        name,
+				Version:     constraint,
+				Direct:      direct,
+				Line:        lines[section][name],
+				LineFile:    "package.json",
+				Ecosystem:   "npm",
+				NonRegistry: !isRegistrySpec(constraint),
 			})
 		}
 	}

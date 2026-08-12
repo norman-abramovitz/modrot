@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -332,5 +335,103 @@ func TestResolveNPMMarksInferredVersion(t *testing.T) {
 	}
 	if mods[1].VersionInferred {
 		t.Error("lockfile-pinned dependency: VersionInferred = true, want false")
+	}
+}
+
+// captureStderr captures stderr output during fn execution.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+
+	fn()
+
+	_ = w.Close()
+	os.Stderr = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	return buf.String()
+}
+
+// A dependency declared as a workspace sibling or local path must never be
+// asked about, because the registry's 404 would be meaningless — and because
+// that meaningless 404 is what used to make every real 404 unreportable.
+func TestNonRegistryDepsAreNeverRequested(t *testing.T) {
+	var requested []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = append(requested, r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := newNPMClient()
+	c.baseURL = srv.URL
+
+	mods := []Module{
+		{Path: "ui", Version: "", Ecosystem: "npm", NonRegistry: true},
+		{Path: "shared", Version: "", Ecosystem: "npm", NonRegistry: true},
+	}
+	_ = captureStderr(t, func() { resolveNPMWithClient(mods, c) })
+
+	if len(requested) != 0 {
+		t.Errorf("registry was asked about non-registry deps: %v", requested)
+	}
+}
+
+// A package the registry definitively does not have, declared with an ordinary
+// version range, is an anomaly: unpublished, renamed, or a typo. Dropping it
+// silently is what a rot detector must never do.
+func TestMissingRegistryPackagesAreReported(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "good") {
+			_, _ = w.Write([]byte(`{"version":"1.0.0","repository":"foo/bar"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := newNPMClient()
+	c.baseURL = srv.URL
+
+	mods := []Module{
+		{Path: "good", Version: "1.0.0", Ecosystem: "npm"},
+		{Path: "typosquatted", Version: "1.0.0", Ecosystem: "npm"},
+	}
+	stderr := captureStderr(t, func() { resolveNPMWithClient(mods, c) })
+
+	if !strings.Contains(stderr, "typosquatted") {
+		t.Errorf("missing package not named on stderr, got: %q", stderr)
+	}
+	if strings.Contains(stderr, "good") {
+		t.Errorf("resolvable package should not be reported, got: %q", stderr)
+	}
+}
+
+// Resolve and deprecation are two phases over the same client. A package the
+// registry does not have is missing in both, but it is one problem and must be
+// named once — two identical lists read as two different faults.
+func TestMissingPackageReportedOncePerRun(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := newNPMClient()
+	c.baseURL = srv.URL
+
+	mods := []Module{{Path: "ghost-package", Version: "1.0.0", Ecosystem: "npm"}}
+	stderr := captureStderr(t, func() {
+		resolveNPMWithClient(mods, c)
+		checkNPMDeprecationsWithClient(mods, c)
+	})
+
+	if got := strings.Count(stderr, "ghost-package"); got != 1 {
+		t.Errorf("ghost-package named %d times, want 1; stderr:\n%s", got, stderr)
 	}
 }
