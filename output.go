@@ -72,6 +72,17 @@ func formatDurationShort(cfg *Config, archivedAt time.Time) string {
 	return strings.Join(parts, "")
 }
 
+// displayVersion renders a module's version for human-readable output. A
+// version modrot inferred from the registry's dist-tags.latest is prefixed
+// with "~", since it is pinned nowhere in the repo and rendering it plainly
+// would present a guess as an installed fact.
+func displayVersion(m Module) string {
+	if m.VersionInferred && m.Version != "" {
+		return "~" + m.Version
+	}
+	return m.Version
+}
+
 // directLabel returns "direct" or "indirect" for a module.
 func directLabel(m Module) string {
 	if m.Direct {
@@ -103,7 +114,7 @@ func archivedHeaders(cfg *Config) []string {
 
 // archivedRow returns column values for one archived result.
 func archivedRow(cfg *Config, r RepoStatus) []string {
-	row := []string{r.Module.Path, r.Module.Version, directLabel(r.Module), fmtDate(cfg, r.ArchivedAt)}
+	row := []string{r.Module.Path, displayVersion(r.Module), directLabel(r.Module), fmtDate(cfg, r.ArchivedAt)}
 	if cfg.Duration.Enabled {
 		row = append(row, formatDuration(cfg, r.ArchivedAt))
 	}
@@ -128,7 +139,7 @@ func staleHeaders(cfg *Config) []string {
 
 // staleRow returns column values for one stale result.
 func staleRow(cfg *Config, r RepoStatus) []string {
-	row := []string{r.Module.Path, r.Module.Version, directLabel(r.Module), fmtDate(cfg, r.PushedAt)}
+	row := []string{r.Module.Path, displayVersion(r.Module), directLabel(r.Module), fmtDate(cfg, r.PushedAt)}
 	if cfg.Duration.Enabled {
 		row = append(row, formatDurationShort(cfg, r.PushedAt))
 	}
@@ -311,9 +322,9 @@ func PrintOutdatedTable(cfg *Config, results []RepoStatus, nonGHModules []Module
 			published = fmtDate(cfg, m.VersionTime)
 		}
 		if cfg.Freshness {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, latest, behind, age, direct, published)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, displayVersion(m), latest, behind, age, direct, published)
 		} else {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, age, direct, published)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", m.Path, displayVersion(m), age, direct, published)
 		}
 	}
 	_ = w.Flush()
@@ -371,10 +382,10 @@ func PrintIgnoredTable(cfg *Config, ignored []RepoStatus, ignoreList *IgnoreList
 				reason = ignoreList.Reason(r.Module.Path)
 			}
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				r.Module.Path, r.Module.Version, direct, status, archivedAt, pushedAt, reason)
+				r.Module.Path, displayVersion(r.Module), direct, status, archivedAt, pushedAt, reason)
 		} else {
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-				r.Module.Path, r.Module.Version, direct, status, archivedAt, pushedAt)
+				r.Module.Path, displayVersion(r.Module), direct, status, archivedAt, pushedAt)
 		}
 	}
 	_ = w.Flush()
@@ -478,9 +489,9 @@ func PrintSkippedTable(cfg *Config, modules []Module) {
 		published := fmtDate(cfg, m.VersionTime)
 		if cfg.Freshness {
 			behind := formatBehind(m)
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, latest, behind, direct, published, m.SourceURL)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, displayVersion(m), latest, behind, direct, published, m.SourceURL)
 		} else {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, m.Version, latest, direct, published, m.SourceURL)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", m.Path, displayVersion(m), latest, direct, published, m.SourceURL)
 		}
 	}
 	_ = w.Flush()
@@ -573,7 +584,7 @@ func PrintTable(cfg *Config, results []RepoStatus, nonGitHubModules []Module, de
 		}
 		writeTabRow(w, toUpper(headers))
 		for _, r := range active {
-			row := []string{r.Module.Path, r.Module.Version, directLabel(r.Module), fmtDate(cfg, r.PushedAt)}
+			row := []string{r.Module.Path, displayVersion(r.Module), directLabel(r.Module), fmtDate(cfg, r.PushedAt)}
 			if cfg.Freshness {
 				row = append(row, latestOrDash(r.Module), formatBehind(r.Module))
 			}
@@ -688,7 +699,7 @@ func PrintDeprecatedTable(modules []Module) {
 		if m.Direct {
 			direct = "direct"
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m.Path, m.Version, direct, m.Deprecated)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", m.Path, displayVersion(m), direct, m.Deprecated)
 	}
 	_ = w.Flush()
 }
@@ -703,14 +714,15 @@ func pluralize(n int, singular, plural string) string {
 
 // JSONSkippedModule represents a non-GitHub module in JSON output.
 type JSONSkippedModule struct {
-	Module        string `json:"module"`
-	Version       string `json:"version"`
-	Direct        bool   `json:"direct"`
-	LatestVersion string `json:"latest_version,omitempty"`
-	Behind        string `json:"behind,omitempty"`
-	Published     string `json:"published,omitempty"`
-	Host          string `json:"host,omitempty"`
-	SourceURL     string `json:"source_url,omitempty"`
+	Module          string `json:"module"`
+	Version         string `json:"version"`
+	VersionInferred bool   `json:"version_inferred,omitempty"`
+	Direct          bool   `json:"direct"`
+	LatestVersion   string `json:"latest_version,omitempty"`
+	Behind          string `json:"behind,omitempty"`
+	Published       string `json:"published,omitempty"`
+	Host            string `json:"host,omitempty"`
+	SourceURL       string `json:"source_url,omitempty"`
 }
 
 // JSONOutput is the structure for JSON output mode.
@@ -728,6 +740,7 @@ type JSONOutput struct {
 type JSONModule struct {
 	Module            string           `json:"module"`
 	Version           string           `json:"version"`
+	VersionInferred   bool             `json:"version_inferred,omitempty"`
 	Direct            bool             `json:"direct"`
 	Owner             string           `json:"owner"`
 	Repo              string           `json:"repo"`
@@ -769,10 +782,11 @@ func buildJSONOutput(cfg *Config, results []RepoStatus, nonGitHubModules []Modul
 
 	for _, m := range nonGitHubModules {
 		jsm := JSONSkippedModule{
-			Module:  m.Path,
-			Version: m.Version,
-			Direct:  m.Direct,
-			Host:    hostDomain(m.Path),
+			Module:          m.Path,
+			Version:         m.Version,
+			VersionInferred: m.VersionInferred,
+			Direct:          m.Direct,
+			Host:            hostDomain(m.Path),
 		}
 		if m.LatestVersion != "" {
 			jsm.LatestVersion = m.LatestVersion
@@ -793,11 +807,12 @@ func buildJSONOutput(cfg *Config, results []RepoStatus, nonGitHubModules []Modul
 
 	for _, r := range results {
 		jm := JSONModule{
-			Module:  r.Module.Path,
-			Version: r.Module.Version,
-			Direct:  r.Module.Direct,
-			Owner:   r.Module.Owner,
-			Repo:    r.Module.Repo,
+			Module:          r.Module.Path,
+			Version:         r.Module.Version,
+			VersionInferred: r.Module.VersionInferred,
+			Direct:          r.Module.Direct,
+			Owner:           r.Module.Owner,
+			Repo:            r.Module.Repo,
 		}
 		if !r.PushedAt.IsZero() {
 			jm.PushedAt = r.PushedAt.Format("2006-01-02T15:04:05Z")
@@ -837,11 +852,12 @@ func buildJSONOutput(cfg *Config, results []RepoStatus, nonGitHubModules []Modul
 	// Add stale modules if provided.
 	for _, r := range staleResults {
 		jm := JSONModule{
-			Module:  r.Module.Path,
-			Version: r.Module.Version,
-			Direct:  r.Module.Direct,
-			Owner:   r.Module.Owner,
-			Repo:    r.Module.Repo,
+			Module:          r.Module.Path,
+			Version:         r.Module.Version,
+			VersionInferred: r.Module.VersionInferred,
+			Direct:          r.Module.Direct,
+			Owner:           r.Module.Owner,
+			Repo:            r.Module.Repo,
 		}
 		if !r.PushedAt.IsZero() {
 			jm.PushedAt = r.PushedAt.Format("2006-01-02T15:04:05Z")
@@ -858,6 +874,7 @@ func buildJSONOutput(cfg *Config, results []RepoStatus, nonGitHubModules []Modul
 			out.Deprecated = append(out.Deprecated, JSONModule{
 				Module:            m.Path,
 				Version:           m.Version,
+				VersionInferred:   m.VersionInferred,
 				Direct:            m.Direct,
 				Owner:             m.Owner,
 				Repo:              m.Repo,
@@ -1155,10 +1172,11 @@ func buildTreeJSONOutput(cfg *Config, results []RepoStatus, graph map[string][]s
 
 	for _, m := range nonGitHubModules {
 		jsm := JSONSkippedModule{
-			Module:  m.Path,
-			Version: m.Version,
-			Direct:  m.Direct,
-			Host:    hostDomain(m.Path),
+			Module:          m.Path,
+			Version:         m.Version,
+			VersionInferred: m.VersionInferred,
+			Direct:          m.Direct,
+			Host:            hostDomain(m.Path),
 		}
 		if m.LatestVersion != "" {
 			jsm.LatestVersion = m.LatestVersion
@@ -1183,6 +1201,7 @@ func buildTreeJSONOutput(cfg *Config, results []RepoStatus, graph map[string][]s
 			out.Deprecated = append(out.Deprecated, JSONModule{
 				Module:            m.Path,
 				Version:           m.Version,
+				VersionInferred:   m.VersionInferred,
 				Direct:            m.Direct,
 				Owner:             m.Owner,
 				Repo:              m.Repo,

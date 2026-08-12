@@ -318,3 +318,44 @@ func TestUnitQualifier(t *testing.T) {
 		})
 	}
 }
+
+// enrichUnits fans results back out by copying an enumerated list of fields,
+// which silently drops any field added later — the same defect that once left
+// --age blank for every GitHub-hosted module. This pins the list: a new
+// enrichment field must be added here, or it never reaches output.
+func TestApplyEnrichedCarriesEveryEnrichedField(t *testing.T) {
+	src := Module{
+		Path:            "xterm",
+		Version:         "5.3.0",
+		VersionInferred: true,
+		Owner:           "xtermjs",
+		Repo:            "xterm.js",
+		Deprecated:      "moved to @xterm/xterm",
+		SourceURL:       "https://github.com/xtermjs/xterm.js",
+		LatestVersion:   "5.5.0",
+	}
+	// Per-location fields must NOT be overwritten: the same dependency can be
+	// direct in one manifest and transitive in another, at different lines.
+	dst := Module{
+		Path:      "xterm",
+		Direct:    true,
+		Line:      12,
+		LineFile:  "package.json",
+		Ecosystem: "npm",
+	}
+
+	applyEnriched(&dst, src)
+
+	if !dst.VersionInferred {
+		t.Error("VersionInferred did not survive the copy")
+	}
+	if dst.Version != "5.3.0" || dst.Owner != "xtermjs" || dst.Repo != "xterm.js" {
+		t.Errorf("version/owner/repo lost: %+v", dst)
+	}
+	if dst.Deprecated == "" || dst.SourceURL == "" {
+		t.Errorf("deprecated/source_url lost: %+v", dst)
+	}
+	if dst.Direct != true || dst.Line != 12 || dst.LineFile != "package.json" {
+		t.Errorf("per-location fields were overwritten: %+v", dst)
+	}
+}

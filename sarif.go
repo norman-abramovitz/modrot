@@ -157,6 +157,11 @@ func sarifManifestLocation(uri string, line int) sarifLocation {
 	}
 }
 
+// inferredVersionNote explains a version modrot resolved itself. SARIF messages
+// are prose, so this is a clause rather than the "~" prefix the tables use:
+// inside "pkg@1.2.3" a tilde would read as a semver range.
+const inferredVersionNote = "version inferred from dist-tags.latest"
+
 // archivedMessage builds the human-readable message for an archived finding.
 func archivedMessage(rs RepoStatus) string {
 	var b strings.Builder
@@ -172,6 +177,9 @@ func archivedMessage(rs RepoStatus) string {
 	}
 	if !rs.PushedAt.IsZero() {
 		details = append(details, "last pushed "+rs.PushedAt.Format("2006-01-02"))
+	}
+	if rs.Module.VersionInferred {
+		details = append(details, inferredVersionNote)
 	}
 	if len(details) > 0 {
 		b.WriteString(" (")
@@ -190,6 +198,11 @@ func deprecatedMessage(m Module) string {
 		b.WriteString(m.Version)
 	}
 	b.WriteString(" is deprecated")
+	if m.VersionInferred {
+		b.WriteString(" (")
+		b.WriteString(inferredVersionNote)
+		b.WriteString(")")
+	}
 	if m.Deprecated != "" {
 		b.WriteString(": ")
 		b.WriteString(m.Deprecated)

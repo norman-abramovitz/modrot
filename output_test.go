@@ -1935,3 +1935,131 @@ func TestPrintIgnoredTable_Empty(t *testing.T) {
 		t.Errorf("expected no output for empty ignored list, got %q", output)
 	}
 }
+
+// A version taken from dist-tags.latest must be flagged in JSON, so a consumer
+// can tell an installed version from one modrot had to guess at. It travels
+// with every Module-to-JSONModule conversion, not just the archived one.
+func TestJSONMarksInferredVersion(t *testing.T) {
+	cfg := defaultTestConfig()
+	results := []RepoStatus{
+		{
+			Module:     Module{Path: "xterm", Version: "5.3.0", Direct: true, Owner: "xtermjs", Repo: "xterm.js", Ecosystem: "npm", VersionInferred: true},
+			IsArchived: true,
+		},
+		{
+			Module:     Module{Path: "chalk", Version: "5.3.0", Direct: true, Owner: "chalk", Repo: "chalk", Ecosystem: "npm"},
+			IsArchived: true,
+		},
+	}
+	deprecated := []Module{
+		{Path: "left-pad", Version: "1.3.0", Direct: true, Ecosystem: "npm", VersionInferred: true},
+	}
+	stale := []RepoStatus{
+		{Module: Module{Path: "glob", Version: "10.3.0", Direct: true, Owner: "isaacs", Repo: "node-glob", Ecosystem: "npm", VersionInferred: true}},
+	}
+	nonGitHub := []Module{
+		{Path: "internal-pkg", Version: "2.0.0", Direct: true, Ecosystem: "npm", VersionInferred: true},
+	}
+
+	out := buildJSONOutput(cfg, results, nonGitHub, nil, stale, deprecated)
+
+	if !out.Archived[0].VersionInferred {
+		t.Error("archived inferred: version_inferred = false, want true")
+	}
+	if out.Archived[1].VersionInferred {
+		t.Error("archived pinned: version_inferred = true, want false")
+	}
+	if !out.Deprecated[0].VersionInferred {
+		t.Error("deprecated inferred: version_inferred = false, want true")
+	}
+	if !out.Stale[0].VersionInferred {
+		t.Error("stale inferred: version_inferred = false, want true")
+	}
+	if !out.NonGitHubModules[0].VersionInferred {
+		t.Error("non-github inferred: version_inferred = false, want true")
+	}
+}
+
+// An inferred version must be visibly distinct wherever a version is rendered,
+// so a reader is never told a package is at a version the repo does not pin.
+// archivedRow and staleRow back both the table and the markdown output.
+func TestRowsMarkInferredVersion(t *testing.T) {
+	cfg := defaultTestConfig()
+	inferred := RepoStatus{
+		Module:     Module{Path: "xterm", Version: "5.3.0", Direct: true, Ecosystem: "npm", VersionInferred: true},
+		IsArchived: true,
+	}
+	pinned := RepoStatus{
+		Module:     Module{Path: "chalk", Version: "5.3.0", Direct: true, Ecosystem: "npm"},
+		IsArchived: true,
+	}
+
+	if got := archivedRow(cfg, inferred)[1]; got != "~5.3.0" {
+		t.Errorf("archivedRow inferred version = %q, want ~5.3.0", got)
+	}
+	if got := archivedRow(cfg, pinned)[1]; got != "5.3.0" {
+		t.Errorf("archivedRow pinned version = %q, want 5.3.0", got)
+	}
+	if got := staleRow(cfg, inferred)[1]; got != "~5.3.0" {
+		t.Errorf("staleRow inferred version = %q, want ~5.3.0", got)
+	}
+}
+
+// The mark has to survive into what the user actually reads, not just the row
+// builder.
+func TestMarkdownShowsInferredVersion(t *testing.T) {
+	cfg := defaultTestConfig()
+	results := []RepoStatus{
+		{
+			Module:     Module{Path: "xterm", Version: "5.3.0", Direct: true, Owner: "xtermjs", Repo: "xterm.js", Ecosystem: "npm", VersionInferred: true},
+			IsArchived: true,
+		},
+	}
+
+	output := captureStdout(t, func() {
+		PrintMarkdown(cfg, results, nil)
+	})
+
+	if !strings.Contains(output, "| ~5.3.0 |") {
+		t.Errorf("markdown missing inferred version mark, got:\n%s", output)
+	}
+}
+
+// Deprecation is the headline npm finding, and an unlocked unit's deprecated
+// package is exactly the case whose version modrot had to infer. The mark must
+// reach both the table and the markdown rendering of it.
+func TestDeprecatedTablesMarkInferredVersion(t *testing.T) {
+	mods := []Module{
+		{Path: "left-pad", Version: "1.3.0", Direct: true, Ecosystem: "npm", Deprecated: "use String.padStart", VersionInferred: true},
+	}
+
+	table := captureStdout(t, func() {
+		PrintDeprecatedTable(mods)
+	})
+	if !strings.Contains(table, "~1.3.0") {
+		t.Errorf("deprecated table missing inferred mark, got:\n%s", table)
+	}
+
+	md := captureStdout(t, func() {
+		printMarkdownDeprecated(mods)
+	})
+	if !strings.Contains(md, "| ~1.3.0 |") {
+		t.Errorf("markdown deprecated missing inferred mark, got:\n%s", md)
+	}
+}
+
+// An npm package with no repository field never reaches GitHub and is reported
+// in the non-GitHub section instead, carrying the same inferred version.
+func TestSkippedTableMarksInferredVersion(t *testing.T) {
+	cfg := defaultTestConfig()
+	mods := []Module{
+		{Path: "internal-pkg", Version: "2.0.0", Direct: true, Ecosystem: "npm", VersionInferred: true},
+	}
+
+	md := captureStdout(t, func() {
+		PrintMarkdownSkipped(cfg, mods)
+	})
+	if !strings.Contains(md, "| ~2.0.0 |") {
+		t.Errorf("markdown non-github missing inferred mark, got:\n%s", md)
+	}
+}

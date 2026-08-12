@@ -289,19 +289,30 @@ func enrichUnits(units []manifestInfo, cfg *Config) {
 			}
 		}
 
-		// Copy only the enriched fields. Line, LineFile, Direct, and
-		// Ecosystem are per-location and must survive: the same dependency
-		// can be direct in one manifest and transitive in another, at
-		// different lines in different files.
 		for i, m := range unique {
 			for _, loc := range locations[keys[i]] {
-				dst := &units[loc[0]].allModules[loc[1]]
-				dst.Version = m.Version
-				dst.Owner = m.Owner
-				dst.Repo = m.Repo
-				dst.Deprecated = m.Deprecated
-				dst.SourceURL = m.SourceURL
+				applyEnriched(&units[loc[0]].allModules[loc[1]], m)
 			}
 		}
 	}
+}
+
+// applyEnriched copies the fields an enrichment pass produces from a
+// representative module onto one of its locations.
+//
+// Only enriched fields are copied. Line, LineFile, Direct and Ecosystem are
+// per-location and must survive: the same dependency can be direct in one
+// manifest and transitive in another, at different lines in different files.
+//
+// Every field an enrichment pass writes has to be listed here. A pass that
+// writes a field this function does not copy will appear to work — the value
+// is set on the representative — while nothing reaches output, which is how
+// --age once came back blank for every GitHub-hosted module.
+func applyEnriched(dst *Module, src Module) {
+	dst.Version = src.Version
+	dst.VersionInferred = src.VersionInferred
+	dst.Owner = src.Owner
+	dst.Repo = src.Repo
+	dst.Deprecated = src.Deprecated
+	dst.SourceURL = src.SourceURL
 }

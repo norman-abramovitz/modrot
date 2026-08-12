@@ -93,7 +93,7 @@ func PrintMarkdown(cfg *Config, results []RepoStatus, nonGitHubModules []Module,
 		}
 		var rows [][]string
 		for _, r := range active {
-			row := []string{r.Module.Path, r.Module.Version, directLabel(r.Module), fmtDate(cfg, r.PushedAt)}
+			row := []string{r.Module.Path, displayVersion(r.Module), directLabel(r.Module), fmtDate(cfg, r.PushedAt)}
 			if cfg.Freshness {
 				row = append(row, latestOrDash(r.Module), formatBehind(r.Module))
 			}
@@ -121,7 +121,7 @@ func printMarkdownDeprecated(deps []Module) {
 	headers := []string{"Module", "Version", "Direct", "Message"}
 	var rows [][]string
 	for _, m := range deps {
-		rows = append(rows, []string{m.Path, m.Version, directLabel(m), m.Deprecated})
+		rows = append(rows, []string{m.Path, displayVersion(m), directLabel(m), m.Deprecated})
 	}
 	printMarkdownTable(os.Stdout, headers, rows)
 }
@@ -140,7 +140,7 @@ func PrintMarkdownSkipped(cfg *Config, modules []Module) {
 	headers = append(headers, "Direct", "Published", "Source")
 	var rows [][]string
 	for _, m := range modules {
-		row := []string{m.Path, m.Version, latestOrDash(m)}
+		row := []string{m.Path, displayVersion(m), latestOrDash(m)}
 		if cfg.Freshness {
 			row = append(row, formatBehind(m))
 		}

@@ -467,3 +467,27 @@ func TestBuildSARIFDoesNotMergeAcrossEcosystems(t *testing.T) {
 		t.Fatalf("got %d results, want 2", n)
 	}
 }
+
+// SARIF messages are prose, so the inferred-version mark is a clause rather
+// than the "~" glyph the tables use — inside "pkg@1.2.3" a tilde would read as
+// a semver range. A code-scanning alert must still not claim a version the
+// repo does not pin.
+func TestSARIFMessagesMarkInferredVersion(t *testing.T) {
+	rs := RepoStatus{
+		Module:     Module{Path: "xterm", Version: "5.3.0", Ecosystem: "npm", VersionInferred: true},
+		IsArchived: true,
+	}
+	if got := archivedMessage(rs); !strings.Contains(got, "version inferred from dist-tags.latest") {
+		t.Errorf("archivedMessage = %q, want an inferred-version clause", got)
+	}
+
+	m := Module{Path: "left-pad", Version: "1.3.0", Ecosystem: "npm", Deprecated: "use String.padStart", VersionInferred: true}
+	if got := deprecatedMessage(m); !strings.Contains(got, "version inferred from dist-tags.latest") {
+		t.Errorf("deprecatedMessage = %q, want an inferred-version clause", got)
+	}
+
+	pinned := Module{Path: "chalk", Version: "5.3.0", Ecosystem: "npm", Deprecated: "x"}
+	if got := deprecatedMessage(pinned); strings.Contains(got, "inferred") {
+		t.Errorf("deprecatedMessage for pinned version = %q, want no inferred clause", got)
+	}
+}
