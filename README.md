@@ -449,6 +449,30 @@ deprecated dependencies appear in the repository's Security tab:
 $ modrot --sarif --deprecated > modrot.sarif
 ```
 
+The easiest way to run this in CI is the bundled GitHub Action, which
+downloads a pinned release binary (checksum-verified), runs the scan, and
+exposes the SARIF path and exit code as outputs:
+
+```yaml
+- id: scan
+  uses: norman-abramovitz/modrot@v0.12.0
+- uses: github/codeql-action/upload-sarif@v3
+  if: steps.scan.outputs.exit-code != '3'
+  with:
+    sarif_file: ${{ steps.scan.outputs.sarif-file }}
+```
+
+Inputs (all optional): `working-directory` (default `.`), `recursive`
+(default `false`), `deprecated` (default `true`), `sarif-file` (default
+`modrot.sarif`), `version` (release to download), `extra-args` (appended
+verbatim, e.g. `--resolve`), and `github-token` (defaults to the workflow
+token; exported as `GH_TOKEN`). Linux and macOS runners only. The step
+fails only when modrot itself errors (exit 2); exit 1 (findings) and
+exit 3 (incomplete scan) succeed so that you own the gate — as above,
+never upload when `exit-code` is `3`.
+
+Without the Action, the same recipe by hand:
+
 ```yaml
 - id: scan
   run: |
