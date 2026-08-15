@@ -9,6 +9,31 @@ are always called out under **BREAKING** below.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-15
+
+### Added
+
+- A composite GitHub Action, published from this repository's root:
+  `uses: norman-abramovitz/modrot@v0.12.0`. It downloads the pinned release
+  binary (sha256-verified against `checksums.txt`), runs the scan with
+  `--sarif`, and exposes two outputs for the caller's upload gate:
+  `sarif-file` (the report path) and `exit-code` (`0` clean, `1` archived
+  found, `2` error, `3` scan incomplete — do not upload). The step fails only
+  when modrot itself errors: exit `2`, or any unexpected exit code from a
+  crashed process. Exit `1` and `3` succeed so the caller owns the gate.
+  Inputs: `working-directory`, `recursive`, `deprecated` (default `true`),
+  `sarif-file`, `version`, `extra-args`, and `github-token` (exported as
+  `GH_TOKEN` for the GitHub API). Linux and macOS runners.
+- A smoke workflow that runs the Action against this repository on Linux and
+  macOS on every pull request and push to `main`.
+
+### Changed
+
+- The README's CI recipe now leads with the Action; the hand-rolled recipe is
+  kept as the "Without the Action" variant and now sets `GH_TOKEN`, without
+  which a runner queries the GitHub API unauthenticated at 60 requests/hour
+  and tends to produce spurious incomplete-scan exits.
+
 ## [0.11.0] - 2026-08-14
 
 ### Added
@@ -245,7 +270,8 @@ First tagged release, as `modrot`.
 - Flags were ignored when placed after the `go.mod` path.
 - `--deprecated` findings were missing from `--tree --json` output.
 
-[Unreleased]: https://github.com/norman-abramovitz/modrot/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/norman-abramovitz/modrot/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/norman-abramovitz/modrot/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/norman-abramovitz/modrot/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/norman-abramovitz/modrot/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/norman-abramovitz/modrot/compare/v0.8.0...v0.9.0
