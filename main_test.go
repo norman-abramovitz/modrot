@@ -237,3 +237,31 @@ func TestExtractStaleFlag_WithThreshold(t *testing.T) {
 		t.Errorf("threshold = (%d, %d, %d), want (1, 6, 0)", staleCfg.Years, staleCfg.Months, staleCfg.Days)
 	}
 }
+
+// A scan that could not reach the registry does not know whether the project
+// is clean. Reporting 0 lets a CI job upload an empty SARIF run, which GitHub
+// reads as "resolved" and uses to close existing alerts — an outage silently
+// clearing a repo's findings. Incompleteness outranks "archived deps found"
+// for the same reason: partial data must not be acted on.
+func TestExitCodeIncompleteOutranksFindings(t *testing.T) {
+	tests := []struct {
+		name        string
+		incomplete  int
+		hasArchived bool
+		want        int
+	}{
+		{"clean and complete", 0, false, 0},
+		{"archived deps, complete", 0, true, 1},
+		{"clean but incomplete", 3, false, 3},
+		{"archived deps AND incomplete", 3, true, 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{IncompleteLookups: tt.incomplete}
+			if got := exitCode(cfg, tt.hasArchived); got != tt.want {
+				t.Errorf("exitCode(incomplete=%d, archived=%v) = %d, want %d",
+					tt.incomplete, tt.hasArchived, got, tt.want)
+			}
+		})
+	}
+}

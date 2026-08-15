@@ -9,6 +9,36 @@ are always called out under **BREAKING** below.
 
 ## [Unreleased]
 
+### Added
+
+- Exit code `3` — scan incomplete. An upstream that could not be reached
+  (network error, 429, 5xx) now changes the exit status instead of only warning
+  on stderr. It takes precedence over `1`: a scan that could not check
+  everything does not know whether the project is clean.
+
+  This closes a real hazard. Under `--sarif` in CI, an unreachable registry
+  produced a short or empty run that still exited `0`, and GitHub treats an
+  uploaded run as the complete current state — so an outage could silently
+  close alerts nobody had fixed. The README's CI recipe is updated to gate the
+  upload on the exit code rather than swallowing it with `|| true`.
+
+### Fixed
+
+- The Go module proxy path could not tell a failed request from "this module
+  has no deprecation comment" — `fetchGoModDeprecation` returned `""` for a
+  network error, a 5xx, a 404 and a genuinely undeprecated module alike. A
+  proxy outage during `--deprecated` therefore reported zero deprecations,
+  silently, and exited 0. Failures are now distinguished from definitive
+  answers (404 and 410 stay definitive), counted, and warned about.
+
+### Known gap
+
+- Vanity-import resolution (`--resolve`) does not yet contribute to the
+  incomplete count. `resolveOne` discovers a repository by reading a
+  `go-import` meta tag, and a failed request is not yet distinguishable from a
+  host that legitimately serves no tag. It reports zero failures rather than a
+  fabricated count.
+
 ## [0.10.0] - 2026-08-14
 
 ### Added

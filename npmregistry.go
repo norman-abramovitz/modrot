@@ -169,13 +169,13 @@ var npmRegistry = newNPMClient()
 // ResolveNPM populates Owner and Repo on npm modules from the registry's
 // repository field, and fills in the resolved version for unlocked units.
 // Returns the count resolved to a GitHub repo.
-func ResolveNPM(modules []Module) int {
+func ResolveNPM(modules []Module) (int, int) {
 	return resolveNPMWithClient(modules, npmRegistry)
 }
 
 // CheckNPMDeprecations populates Deprecated on npm modules from the registry.
 // Returns the count of deprecated packages found.
-func CheckNPMDeprecations(modules []Module) int {
+func CheckNPMDeprecations(modules []Module) (int, int) {
 	return checkNPMDeprecationsWithClient(modules, npmRegistry)
 }
 
@@ -285,7 +285,7 @@ func warnMissing(missing []string) {
 
 // resolveNPMWithClient is the internal implementation, accepting a client so
 // tests can point at a mock registry.
-func resolveNPMWithClient(modules []Module, c *npmClient) int {
+func resolveNPMWithClient(modules []Module, c *npmClient) (int, int) {
 	resolved, failed, missing := npmFetchAll(modules, c, func(m *Module, info *npmVersionInfo) bool {
 		if m.Version == "" && info.Version != "" {
 			m.Version = info.Version
@@ -301,12 +301,12 @@ func resolveNPMWithClient(modules []Module, c *npmClient) int {
 	})
 	warnIncomplete(failed)
 	warnMissing(missing)
-	return resolved
+	return resolved, failed
 }
 
 // checkNPMDeprecationsWithClient is the internal implementation, accepting a
 // client so tests can point at a mock registry.
-func checkNPMDeprecationsWithClient(modules []Module, c *npmClient) int {
+func checkNPMDeprecationsWithClient(modules []Module, c *npmClient) (int, int) {
 	found, failed, missing := npmFetchAll(modules, c, func(m *Module, info *npmVersionInfo) bool {
 		if info.Deprecated == "" {
 			return false
@@ -322,7 +322,7 @@ func checkNPMDeprecationsWithClient(modules []Module, c *npmClient) int {
 	// a package's deprecation status silently unchecked.
 	warnIncomplete(failed)
 	warnMissing(missing)
-	return found
+	return found, failed
 }
 
 // markReported records that a missing package has been warned about and

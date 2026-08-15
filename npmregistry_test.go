@@ -90,7 +90,7 @@ func TestResolveNPMPopulatesOwnerRepo(t *testing.T) {
 		{Path: "norepo", Version: "1.0.0", Ecosystem: "npm"},
 		{Path: "missing", Version: "9.9.9", Ecosystem: "npm"},
 	}
-	got := resolveNPMWithClient(mods, c)
+	got, _ := resolveNPMWithClient(mods, c)
 	if got != 4 {
 		t.Errorf("resolved %d, want 4", got)
 	}
@@ -121,7 +121,7 @@ func TestCheckNPMDeprecations(t *testing.T) {
 		{Path: "circular-json", Version: "0.5.9", Ecosystem: "npm"},
 		{Path: "norepo", Version: "1.0.0", Ecosystem: "npm"},
 	}
-	got := checkNPMDeprecationsWithClient(mods, c)
+	got, _ := checkNPMDeprecationsWithClient(mods, c)
 	if got != 2 {
 		t.Errorf("found %d deprecated, want 2", got)
 	}
@@ -144,7 +144,7 @@ func TestResolveNPMUnlockedUsesLatest(t *testing.T) {
 	c.baseURL = srv.URL
 
 	mods := []Module{{Path: "xterm", Version: "", Ecosystem: "npm"}}
-	if got := resolveNPMWithClient(mods, c); got != 1 {
+	if got, _ := resolveNPMWithClient(mods, c); got != 1 {
 		t.Fatalf("resolved %d, want 1", got)
 	}
 	if mods[0].Version != "5.3.0" {
@@ -175,7 +175,7 @@ func TestNPMClientScopedNames(t *testing.T) {
 	c.baseURL = srv.URL
 
 	mods := []Module{{Path: "@babel/core", Version: "7.24.0", Ecosystem: "npm"}}
-	if got := resolveNPMWithClient(mods, c); got != 1 {
+	if got, _ := resolveNPMWithClient(mods, c); got != 1 {
 		t.Fatalf("resolved %d, want 1", got)
 	}
 	if gotURI != "/@babel/core/7.24.0" {
@@ -250,7 +250,7 @@ func TestResolveNPMReportsUnreachablePackages(t *testing.T) {
 		{Path: "good", Version: "1.0.0", Ecosystem: "npm"},
 		{Path: "unreachable", Version: "1.0.0", Ecosystem: "npm"},
 	}
-	if got := resolveNPMWithClient(mods, c); got != 1 {
+	if got, _ := resolveNPMWithClient(mods, c); got != 1 {
 		t.Errorf("resolved %d, want 1", got)
 	}
 	if mods[0].Owner != "foo" {
@@ -278,7 +278,7 @@ func TestCheckNPMDeprecationsReportsUnreachablePackages(t *testing.T) {
 	c.baseURL = srv.URL
 
 	mods := []Module{{Path: "unreachable", Version: "1.0.0", Ecosystem: "npm"}}
-	if got := checkNPMDeprecationsWithClient(mods, c); got != 0 {
+	if got, _ := checkNPMDeprecationsWithClient(mods, c); got != 0 {
 		t.Errorf("found %d deprecated, want 0", got)
 	}
 	if hits == 0 {
@@ -327,7 +327,7 @@ func TestResolveNPMMarksInferredVersion(t *testing.T) {
 		{Path: "xterm", Version: "", Ecosystem: "npm"},
 		{Path: "xterm", Version: "5.3.0", Ecosystem: "npm"},
 	}
-	if got := resolveNPMWithClient(mods, c); got != 2 {
+	if got, _ := resolveNPMWithClient(mods, c); got != 2 {
 		t.Fatalf("resolved %d, want 2", got)
 	}
 	if !mods[0].VersionInferred {
@@ -376,7 +376,7 @@ func TestNonRegistryDepsAreNeverRequested(t *testing.T) {
 		{Path: "ui", Version: "", Ecosystem: "npm", NonRegistry: true},
 		{Path: "shared", Version: "", Ecosystem: "npm", NonRegistry: true},
 	}
-	_ = captureStderr(t, func() { resolveNPMWithClient(mods, c) })
+	_ = captureStderr(t, func() { _, _ = resolveNPMWithClient(mods, c) })
 
 	if len(requested) != 0 {
 		t.Errorf("registry was asked about non-registry deps: %v", requested)
@@ -403,7 +403,7 @@ func TestMissingRegistryPackagesAreReported(t *testing.T) {
 		{Path: "good", Version: "1.0.0", Ecosystem: "npm"},
 		{Path: "typosquatted", Version: "1.0.0", Ecosystem: "npm"},
 	}
-	stderr := captureStderr(t, func() { resolveNPMWithClient(mods, c) })
+	stderr := captureStderr(t, func() { _, _ = resolveNPMWithClient(mods, c) })
 
 	if !strings.Contains(stderr, "typosquatted") {
 		t.Errorf("missing package not named on stderr, got: %q", stderr)
@@ -427,8 +427,8 @@ func TestMissingPackageReportedOncePerRun(t *testing.T) {
 
 	mods := []Module{{Path: "ghost-package", Version: "1.0.0", Ecosystem: "npm"}}
 	stderr := captureStderr(t, func() {
-		resolveNPMWithClient(mods, c)
-		checkNPMDeprecationsWithClient(mods, c)
+		_, _ = resolveNPMWithClient(mods, c)
+		_, _ = checkNPMDeprecationsWithClient(mods, c)
 	})
 
 	if got := strings.Count(stderr, "ghost-package"); got != 1 {

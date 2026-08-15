@@ -204,14 +204,14 @@ func TestEnrichUnitsDeduplicatesAcrossUnits(t *testing.T) {
 	fake := &Ecosystem{
 		Name:      "go",
 		Manifests: []string{"go.mod"},
-		Resolve: func(mods []Module) int {
+		Resolve: func(mods []Module) (int, int) {
 			calls++
 			for i := range mods {
 				mods[i].Owner, mods[i].Repo = "acme", "shared"
 			}
-			return len(mods)
+			return len(mods), 0
 		},
-		Deprecations: func(mods []Module) int { return 0 },
+		Deprecations: func(mods []Module) (int, int) { return 0, 0 },
 	}
 	orig := ecosystems
 	ecosystems = []*Ecosystem{fake}
