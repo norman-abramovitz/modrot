@@ -313,9 +313,9 @@ func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, c
 			deprecatedModules := getDeprecatedModules(mi.allModules, cfg.DirectOnly, cfg.Deprecated)
 			treeOut := buildTreeJSONOutput(cfg, results, graph, mi.allModules, fileMatches, mi.nonGHModules, deprecatedModules)
 			out.Modules = append(out.Modules, RecursiveJSONTreeEntry{
-				GoMod:          mi.relPath,
+				Manifest:       mi.relPath,
 				ModulePath:     mi.moduleName,
-				GoVersion:      unitQualifier(mi, cfg),
+				Toolchain:      unitQualifier(mi, cfg),
 				JSONTreeOutput: treeOut,
 			})
 		}
@@ -355,9 +355,9 @@ func runRecursiveJSON(modules []manifestInfo, statusMap map[string]RepoStatus, c
 			stale := filterStale(cfg, results)
 			jsonOut := buildJSONOutput(cfg, results, mi.nonGHModules, fileMatches, stale, deprecatedModules)
 			out.Modules = append(out.Modules, RecursiveJSONEntry{
-				GoMod:      mi.relPath,
+				Manifest:   mi.relPath,
 				ModulePath: mi.moduleName,
-				GoVersion:  unitQualifier(mi, cfg),
+				Toolchain:  unitQualifier(mi, cfg),
 				JSONOutput: jsonOut,
 			})
 		}

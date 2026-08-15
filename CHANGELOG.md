@@ -58,6 +58,11 @@ are always called out under **BREAKING** below.
   modrot --json | jq -r '(.modules // [.])[].archived[]?.module'
   ```
 
+- **BREAKING** — the per-unit `--json` keys are renamed to ecosystem-neutral
+  names: `go_mod` becomes `manifest`, `go_version` becomes `toolchain`. Both
+  were named when Go was the only ecosystem, and held `"package.json"` and
+  `"npm, unlocked"` for npm units. Bundled into the shape change above so
+  consumers migrate once.
 - Manifest units are reported in path order, so unit order is stable across
   runs in text, in `--json` `modules[]`, and in `--sarif` `results[]`, where the
   first location anchors a code-scanning alert.

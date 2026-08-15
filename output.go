@@ -1302,9 +1302,9 @@ type RecursiveJSONOutput struct {
 
 // RecursiveJSONEntry holds results for a single go.mod in recursive mode.
 type RecursiveJSONEntry struct {
-	GoMod      string `json:"go_mod"`
+	Manifest   string `json:"manifest"`
 	ModulePath string `json:"module_path"`
-	GoVersion  string `json:"go_version,omitempty"`
+	Toolchain  string `json:"toolchain,omitempty"`
 	JSONOutput
 }
 
@@ -1315,9 +1315,9 @@ type RecursiveJSONTreeOutput struct {
 
 // RecursiveJSONTreeEntry holds tree results for a single go.mod in recursive mode.
 type RecursiveJSONTreeEntry struct {
-	GoMod      string `json:"go_mod"`
+	Manifest   string `json:"manifest"`
 	ModulePath string `json:"module_path"`
-	GoVersion  string `json:"go_version,omitempty"`
+	Toolchain  string `json:"toolchain,omitempty"`
 	JSONTreeOutput
 }
 
