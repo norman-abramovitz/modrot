@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -156,5 +158,43 @@ func TestMixedRepoDiscovery(t *testing.T) {
 	}
 	if !names["go"] || !names["npm"] {
 		t.Errorf("discovered %v, want both go and npm", names)
+	}
+}
+
+// End-to-end proof of the incomplete-scan exit code: the whole pipeline, a
+// registry that answers 5xx for everything, and the exit status the CI job
+// actually sees. Asserting the counter alone would not prove the code reaches
+// os.Exit — which is the entire point of the fix.
+func TestIncompleteScanExitsThreeEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"),
+		[]byte(`{"name":"outage-check","dependencies":{"xterm":"^5.3.0"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(down.Close)
+
+	orig := npmRegistry
+	npmRegistry = newNPMClient()
+	npmRegistry.baseURL = down.URL
+	t.Cleanup(func() { npmRegistry = orig })
+
+	cfg := defaultTestConfig()
+	cfg.Deprecated = true
+	cfg.OutputFormat = "table"
+
+	var got int
+	_ = captureStdout(t, func() {
+		got = runSingleModule(cfg, dir)
+	})
+
+	if got != 3 {
+		t.Errorf("exit code = %d, want 3 — an unreachable registry must not report a clean scan", got)
+	}
+	if cfg.IncompleteLookups == 0 {
+		t.Error("IncompleteLookups = 0, want >0")
 	}
 }

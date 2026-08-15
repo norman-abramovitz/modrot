@@ -143,10 +143,7 @@ func runRecursive(rootDir string, cfg *Config) int {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 2
 	}
-	if dispatchRecursiveOutput(modules, statusMap, cfg) {
-		return 1
-	}
-	return 0
+	return exitCode(cfg, dispatchRecursiveOutput(modules, statusMap, cfg))
 }
 
 // prepareUnits runs the freshness pass, when requested, then splits every unit

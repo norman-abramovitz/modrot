@@ -18,11 +18,14 @@ import (
 // npm, which is what makes --tree report itself unsupported rather than
 // needing a branch at the call site.
 type Ecosystem struct {
-	Name         string   // "go" or "npm"
-	Manifests    []string // primary manifest first, then companions
-	Parse        func(dir string) (*ParseResult, error)
-	Resolve      func(modules []Module) int
-	Deprecations func(modules []Module) int
+	Name      string   // "go" or "npm"
+	Manifests []string // primary manifest first, then companions
+	Parse     func(dir string) (*ParseResult, error)
+	// Resolve and Deprecations each return (count, failed): what they found,
+	// and how many dependencies their upstream could not be consulted about.
+	// The failure count is what stops an outage reading as a clean scan.
+	Resolve      func(modules []Module) (int, int)
+	Deprecations func(modules []Module) (int, int)
 	ScanImports  func(dir string, names []string) (map[string][]FileMatch, error)
 	Graph        func(dir, goVersionOverride string) (map[string][]string, error)
 }
@@ -50,8 +53,8 @@ var goEcosystem = &Ecosystem{
 	Name:         "go",
 	Manifests:    []string{"go.mod"},
 	Parse:        parseGoUnit,
-	Resolve:      func(m []Module) int { return ResolveVanityImports(m, 20) },
-	Deprecations: func(m []Module) int { return CheckDeprecations(m, 20) },
+	Resolve:      func(m []Module) (int, int) { return ResolveVanityImports(m, 20) },
+	Deprecations: func(m []Module) (int, int) { return CheckDeprecations(m, 20) },
 	ScanImports:  ScanImports,
 	Graph:        parseModGraph,
 }
@@ -277,13 +280,17 @@ func enrichUnits(units []manifestInfo, cfg *Config) {
 
 		if cfg.Resolve || eco.Name == "npm" {
 			// npm always resolves: repository.url is its only route to a repo.
-			if n := eco.Resolve(unique); n > 0 {
+			n, failed := eco.Resolve(unique)
+			cfg.IncompleteLookups += failed
+			if n > 0 {
 				_, _ = fmt.Fprintf(os.Stderr, "Resolved %d %s %s to GitHub repos.\n",
 					n, eco.Name, pluralize(n, "dependency", "dependencies"))
 			}
 		}
 		if cfg.Deprecated {
-			if n := eco.Deprecations(unique); n > 0 {
+			n, failed := eco.Deprecations(unique)
+			cfg.IncompleteLookups += failed
+			if n > 0 {
 				_, _ = fmt.Fprintf(os.Stderr, "Found %d deprecated %s %s.\n",
 					n, eco.Name, pluralize(n, "package", "packages"))
 			}

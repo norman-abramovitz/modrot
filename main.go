@@ -96,7 +96,8 @@ Detect archived GitHub dependencies in a Go, npm, or Bun project.
 
 With no flags, checks the go.mod and/or package.json in the current
 directory and prints archived dependencies as a table. Exits 1 if any
-are found (useful for CI).
+are found (useful for CI), 2 on error, and 3 if an upstream could not
+be reached and the scan is therefore incomplete.
 Flags can appear before or after the path argument.
 
 Output format:
@@ -297,10 +298,7 @@ func reportUnits(units []manifestInfo, cfg *Config, rootDir string) int {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 2
 	}
-	if dispatchRecursiveOutput(units, statusMap, cfg) {
-		return 1
-	}
-	return 0
+	return exitCode(cfg, dispatchRecursiveOutput(units, statusMap, cfg))
 }
 
 // runSingleUnit runs the full pipeline for a single manifest unit, printing
@@ -334,7 +332,7 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 				Deprecated:  collectDeprecated(cfg, mi.allModules),
 			}})
 		}
-		return 0
+		return exitCode(cfg, false)
 	}
 
 	_, _ = fmt.Fprintf(os.Stderr, "Checking %d GitHub modules...\n", len(githubModules))
@@ -376,7 +374,7 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 			_, _ = fmt.Fprintf(os.Stderr, "Warning: could not run go mod graph: %v\n", graphErr)
 		} else {
 			outputTree(cfg, results, graph, mi.allModules, fileMatches, nonGitHubModules, deprecatedModules, stale, ignoredResults, ignoreList)
-			return exitCode(hasArchived)
+			return exitCode(cfg, hasArchived)
 		}
 	}
 
@@ -385,13 +383,13 @@ func runSingleUnit(mi manifestInfo, cfg *Config) int {
 	// would print a text table into the middle of that document.
 	// warnUnsupported has already explained the omission.
 	if cfg.OutputFormat == "mermaid" && mi.eco.Graph == nil {
-		return exitCode(hasArchived)
+		return exitCode(cfg, hasArchived)
 	}
 
 	// Output
 	outputFlat(cfg, unitDirFromCwd(cwd, mi.manifestPath), results, nonGitHubModules, fileMatches, deprecatedModules, stale, ignoredResults, ignoreList)
 
-	return exitCode(hasArchived)
+	return exitCode(cfg, hasArchived)
 }
 
 // splitUnitModules runs a unit's Go freshness pass, when requested, and then
@@ -559,8 +557,17 @@ func outputSupplement(cfg *Config, results []RepoStatus, nonGitHubModules []Modu
 	}
 }
 
-// exitCode returns 1 if archived deps were found, 0 otherwise.
-func exitCode(hasArchived bool) int {
+// exitCode maps a finished scan to its exit status: 3 if any lookup could not
+// be completed, 1 if archived dependencies were found, 0 otherwise.
+//
+// Incompleteness outranks a finding. A scan that could not reach the registry
+// does not know what it missed, and the caller must not act on partial data —
+// most sharply under --sarif, where uploading a short run lets GitHub close
+// alerts that were never re-verified.
+func exitCode(cfg *Config, hasArchived bool) int {
+	if cfg.IncompleteLookups > 0 {
+		return 3
+	}
 	if hasArchived {
 		return 1
 	}

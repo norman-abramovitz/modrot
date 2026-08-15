@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -164,7 +165,7 @@ go 1.21
 			defer srv.Close()
 
 			r := &resolver{client: srv.Client(), proxyBaseURL: srv.URL}
-			got := r.fetchGoModDeprecation("github.com/golang/protobuf", "v1.5.4")
+			got, _ := r.fetchGoModDeprecation("github.com/golang/protobuf", "v1.5.4")
 			if got != tt.want {
 				t.Errorf("fetchGoModDeprecation() = %q, want %q", got, tt.want)
 			}
@@ -181,7 +182,7 @@ func TestFetchGoModDeprecation_CorrectURL(t *testing.T) {
 	defer srv.Close()
 
 	r := &resolver{client: srv.Client(), proxyBaseURL: srv.URL}
-	r.fetchGoModDeprecation("github.com/foo/bar", "v1.2.3")
+	_, _ = r.fetchGoModDeprecation("github.com/foo/bar", "v1.2.3")
 
 	wantPath := "/github.com/foo/bar/@v/v1.2.3.mod"
 	if gotPath != wantPath {
@@ -217,7 +218,7 @@ func TestCheckDeprecations(t *testing.T) {
 	// Manually check each module (simulating CheckDeprecations logic).
 	count := 0
 	for i := range modules {
-		msg := r.fetchGoModDeprecation(modules[i].Path, modules[i].Version)
+		msg, _ := r.fetchGoModDeprecation(modules[i].Path, modules[i].Version)
 		if msg != "" {
 			modules[i].Deprecated = msg
 			count++
@@ -265,7 +266,7 @@ func TestCheckDeprecations_WorkerPool(t *testing.T) {
 	}
 
 	r := &resolver{client: srv.Client(), proxyBaseURL: srv.URL}
-	count := checkDeprecationsWithResolver(modules, 4, r)
+	count, _ := checkDeprecationsWithResolver(modules, 4, r)
 
 	if count != 2 {
 		t.Errorf("count = %d, want 2", count)
@@ -281,5 +282,35 @@ func TestCheckDeprecations_WorkerPool(t *testing.T) {
 	}
 	if modules[3].Deprecated != "" {
 		t.Errorf("missing/mod should not be deprecated, got %q", modules[3].Deprecated)
+	}
+}
+
+// The Go proxy path returned "" for a network failure, a 5xx AND for "this
+// module has no deprecation comment" alike, so a proxy outage reported zero
+// deprecations with no warning and exit 0 — the same hazard as an empty SARIF
+// upload closing GitHub alerts. A failure must be counted, not swallowed.
+func TestCheckDeprecationsCountsUnreachableModules(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "good") {
+			_, _ = w.Write([]byte("// Deprecated: use something else\nmodule github.com/foo/good\n"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	r := &resolver{client: srv.Client(), proxyBaseURL: srv.URL}
+	modules := []Module{
+		{Path: "github.com/foo/good", Version: "v1.0.0", Ecosystem: "go"},
+		{Path: "github.com/foo/unreachable", Version: "v1.0.0", Ecosystem: "go"},
+	}
+
+	found, failed := checkDeprecationsWithResolver(modules, 4, r)
+
+	if found != 1 {
+		t.Errorf("found %d deprecated, want 1", found)
+	}
+	if failed != 1 {
+		t.Errorf("failed = %d, want 1 — a 5xx must not read as 'no deprecation'", failed)
 	}
 }

@@ -45,9 +45,17 @@ func newResolver() *resolver {
 }
 
 // ResolveVanityImports resolves non-GitHub modules to GitHub repos.
-// It updates Owner/Repo in-place on each Module. Returns the count resolved.
-func ResolveVanityImports(modules []Module, maxWorkers int) int {
-	return resolveVanityImportsWithResolver(modules, maxWorkers, newResolver())
+// It updates Owner/Repo in-place on each Module.
+//
+// Returns (resolved, incomplete). The incomplete count is always 0 today:
+// resolveOne discovers a repo by fetching a vanity URL and reading its
+// go-import meta tag, and "the request failed" is not yet distinguishable from
+// "this host serves no meta tag" — which is a legitimate answer for many
+// modules. Reporting a fabricated failure count would be worse than reporting
+// none, so this path does not yet contribute to the incomplete-scan exit code.
+// See the note in the changelog.
+func ResolveVanityImports(modules []Module, maxWorkers int) (int, int) {
+	return resolveVanityImportsWithResolver(modules, maxWorkers, newResolver()), 0
 }
 
 // resolveVanityImportsWithResolver is the internal implementation that accepts

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -15,17 +16,19 @@ import (
 
 // CheckDeprecations fetches go.mod files from the proxy for all modules
 // and populates Module.Deprecated with the deprecation message if present.
-// Returns count of deprecated modules found.
-func CheckDeprecations(modules []Module, maxWorkers int) int {
+// Returns the count of deprecated modules found, and the count the proxy could
+// not be consulted about.
+func CheckDeprecations(modules []Module, maxWorkers int) (int, int) {
 	return checkDeprecationsWithResolver(modules, maxWorkers, newResolver())
 }
 
 // checkDeprecationsWithResolver is the internal implementation that accepts
 // a resolver, allowing tests to inject mock HTTP servers.
-func checkDeprecationsWithResolver(modules []Module, maxWorkers int, r *resolver) int {
+func checkDeprecationsWithResolver(modules []Module, maxWorkers int, r *resolver) (int, int) {
 	type result struct {
 		idx     int
 		message string
+		ok      bool
 	}
 	results := make(chan result, len(modules))
 
@@ -39,9 +42,9 @@ func checkDeprecationsWithResolver(modules []Module, maxWorkers int, r *resolver
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			msg := r.fetchGoModDeprecation(modules[idx].Path, modules[idx].Version)
-			if msg != "" {
-				results <- result{idx: idx, message: msg}
+			msg, ok := r.fetchGoModDeprecation(modules[idx].Path, modules[idx].Version)
+			if !ok || msg != "" {
+				results <- result{idx: idx, message: msg, ok: ok}
 			}
 		}(i)
 	}
@@ -49,20 +52,41 @@ func checkDeprecationsWithResolver(modules []Module, maxWorkers int, r *resolver
 	wg.Wait()
 	close(results)
 
-	count := 0
+	count, failed := 0, 0
 	for res := range results {
+		if !res.ok {
+			failed++
+			continue
+		}
 		modules[res.idx].Deprecated = res.message
 		count++
 	}
-	return count
+	warnIncompleteProxy(failed)
+	return count, failed
+}
+
+// warnIncompleteProxy reports modules the Go module proxy could not be
+// consulted about, mirroring warnIncomplete on the npm side.
+func warnIncompleteProxy(failed int) {
+	if failed == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(os.Stderr,
+		"Warning: could not reach the Go module proxy for %d %s; results are incomplete\n",
+		failed, pluralize(failed, "module", "modules"))
 }
 
 // fetchGoModDeprecation fetches a module's go.mod from the proxy and
 // extracts any "// Deprecated:" comment from the module directive.
-func (r *resolver) fetchGoModDeprecation(modulePath, version string) string {
+// The second return value is false only when the proxy could not be consulted
+// — a network error, a 429, a 5xx. A 404 or a 410 is a definitive "the proxy
+// has no go.mod for this version" and reports true with an empty message, as
+// does a module that simply carries no deprecation comment. Conflating the two
+// is what let a proxy outage report a clean scan.
+func (r *resolver) fetchGoModDeprecation(modulePath, version string) (string, bool) {
 	escaped, err := module.EscapePath(modulePath)
 	if err != nil {
-		return ""
+		return "", true // a path this malformed is not a transient condition
 	}
 
 	url := fmt.Sprintf("%s/%s/@v/%s.mod", r.proxyBaseURL, escaped, version)
@@ -71,25 +95,28 @@ func (r *resolver) fetchGoModDeprecation(modulePath, version string) string {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return ""
+		return "", false
 	}
 
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != 200 {
-		return ""
+	switch {
+	case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone:
+		return "", true // definitive: the proxy has no such module version
+	case resp.StatusCode != http.StatusOK:
+		return "", false
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return ""
+		return "", false
 	}
 
-	return parseDeprecation(string(body))
+	return parseDeprecation(string(body)), true
 }
 
 // parseDeprecation extracts the deprecation message from a go.mod file body.

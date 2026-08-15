@@ -113,6 +113,10 @@ Five of the six formats — table, JSON, Markdown, quickfix, and SARIF — work 
 - `0` — no archived dependencies found
 - `1` — archived dependencies detected (useful in CI)
 - `2` — error (bad path, parse failure, API error)
+- `3` — scan incomplete: an upstream could not be reached, so the result is not
+  trustworthy. Takes precedence over `1` — a scan that could not check
+  everything does not know whether the project is clean, and partial data must
+  not be acted on. See the SARIF note below.
 
 ## Examples
 
@@ -446,13 +450,18 @@ $ modrot --sarif --deprecated > modrot.sarif
 ```
 
 ```yaml
-- run: modrot --sarif --deprecated > modrot.sarif || true
+- id: scan
+  run: |
+    modrot --sarif --deprecated > modrot.sarif || code=$?
+    echo "code=${code:-0}" >> "$GITHUB_OUTPUT"
+    [ "${code:-0}" = "2" ] && exit 1 || exit 0
 - uses: github/codeql-action/upload-sarif@v3
+  if: steps.scan.outputs.code != '3'
   with:
     sarif_file: modrot.sarif
 ```
 
-The `|| true` keeps the workflow running when modrot exits 1 on archived findings, so the upload step still runs. Each archived dependency is reported as a `warning` and each deprecated dependency as a `note`, anchored to the exact line that names it: the `require` line in `go.mod` for a Go unit, the `package.json` line for a direct npm dependency, the lockfile line (`package-lock.json` or `bun.lock`) for a transitive one. A dependency that appears in several manifests becomes one result with a location per site. SARIF paths are always relative to the current working directory, so run modrot from the repository root — e.g. `modrot --recursive --sarif . > modrot.sarif` — so the paths are repo-relative. Stale, age, and stats sections are not part of SARIF output.
+**Do not upload a SARIF run from an incomplete scan.** GitHub treats an uploaded run as the complete current state: a finding that is absent from it is marked resolved and its alert is closed. If an upstream registry is unreachable, modrot emits a short run — possibly an empty one — and uploading that would silently close alerts nobody fixed. That is why the scan exits `3` rather than `0`, and why the recipe above gates the upload on it instead of using a blanket `|| true`. Exit `1` (archived findings) still uploads, which is the normal case. Each archived dependency is reported as a `warning` and each deprecated dependency as a `note`, anchored to the exact line that names it: the `require` line in `go.mod` for a Go unit, the `package.json` line for a direct npm dependency, the lockfile line (`package-lock.json` or `bun.lock`) for a transitive one. A dependency that appears in several manifests becomes one result with a location per site. SARIF paths are always relative to the current working directory, so run modrot from the repository root — e.g. `modrot --recursive --sarif . > modrot.sarif` — so the paths are repo-relative. Stale, age, and stats sections are not part of SARIF output.
 
 **Sorting** — sort archived dependencies by field and direction. Append `:asc` or `:desc` to control order. Each field has a natural default:
 

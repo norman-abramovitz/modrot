@@ -43,6 +43,12 @@ type Config struct {
 
 	// Time
 	Now time.Time // reference "now" for all time-relative calculations
+
+	// IncompleteLookups counts dependencies whose upstream metadata could not
+	// be retrieved — a network error, a 429, a 5xx. It is an absence of
+	// information, not a finding, and it changes the exit code so that CI
+	// never treats a partial scan as a clean one.
+	IncompleteLookups int
 }
 
 // DurationConfig controls the --duration feature.
