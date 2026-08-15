@@ -294,7 +294,7 @@ func TestUnitHeader(t *testing.T) {
 	}
 }
 
-// The recursive JSON entry's go_version field must say the same thing the
+// The recursive JSON entry's toolchain field must say the same thing the
 // text header says. Stamping the Go toolchain onto an npm unit reports a
 // toolchain that had nothing to do with resolving those dependencies.
 func TestUnitQualifier(t *testing.T) {

@@ -2063,3 +2063,30 @@ func TestSkippedTableMarksInferredVersion(t *testing.T) {
 		t.Errorf("markdown non-github missing inferred mark, got:\n%s", md)
 	}
 }
+
+// The per-unit JSON keys were named when Go was the only ecosystem: go_mod
+// holds "package.json" for an npm unit and go_version holds "npm, unlocked".
+// Both are renamed to ecosystem-neutral names, bundled into the one breaking
+// --json change consumers are already absorbing for this release.
+func TestRecursiveJSONKeysAreEcosystemNeutral(t *testing.T) {
+	for _, entry := range []any{
+		RecursiveJSONEntry{Manifest: "package.json", ModulePath: "my-app", Toolchain: "npm, unlocked"},
+		RecursiveJSONTreeEntry{Manifest: "go.mod", ModulePath: "github.com/foo/bar", Toolchain: "go1.26.5"},
+	} {
+		raw, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		got := string(raw)
+		for _, gone := range []string{`"go_mod"`, `"go_version"`} {
+			if strings.Contains(got, gone) {
+				t.Errorf("%T still emits %s: %s", entry, gone, got)
+			}
+		}
+		for _, want := range []string{`"manifest"`, `"toolchain"`} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%T missing %s: %s", entry, want, got)
+			}
+		}
+	}
+}

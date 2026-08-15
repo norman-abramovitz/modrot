@@ -404,17 +404,17 @@ $ modrot --json
 {
   "modules": [
     {
-      "go_mod": "go.mod",
+      "manifest": "go.mod",
       "module_path": "github.com/myorg/myapp",
-      "go_version": "go1.26.5",
+      "toolchain": "go1.26.5",
       "archived": [ ... ],
       "non_github_count": 0,
       "total_checked": 0
     },
     {
-      "go_mod": "package.json",
+      "manifest": "package.json",
       "module_path": "myapp-tooling",
-      "go_version": "npm, unlocked",
+      "toolchain": "npm, unlocked",
       "archived": [ ... ],
       "non_github_count": 0,
       "total_checked": 0
