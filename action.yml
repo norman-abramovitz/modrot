@@ -98,12 +98,13 @@ runs:
         if [ "$MODROT_DEPRECATED" = "true" ]; then args+=(--deprecated); fi
         if [ "$MODROT_RECURSIVE" = "true" ]; then args+=(--recursive); fi
         code=0
-        # extra-args is word-split by design
+        # extra-args is word-split by design, but not glob-expanded
+        set -f
         modrot "${args[@]}" $MODROT_EXTRA_ARGS . > "$MODROT_SARIF_FILE" || code=$?
         echo "exit-code=${code}" >> "$GITHUB_OUTPUT"
         echo "sarif-file=${MODROT_WORKDIR%/}/${MODROT_SARIF_FILE}" >> "$GITHUB_OUTPUT"
-        if [ "$code" = "2" ]; then
-          echo "::error::modrot exited 2 (error) — see log above"
-          exit 1
-        fi
-        exit 0
+        case "$code" in
+          0|1|3) exit 0 ;;
+          2) echo "::error::modrot exited 2 (error) — see log above"; exit 1 ;;
+          *) echo "::error::unexpected modrot exit $code"; exit 1 ;;
+        esac
