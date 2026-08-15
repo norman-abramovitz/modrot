@@ -475,6 +475,8 @@ Without the Action, the same recipe by hand:
 
 ```yaml
 - id: scan
+  env:
+    GH_TOKEN: ${{ github.token }}
   run: |
     modrot --sarif --deprecated > modrot.sarif || code=$?
     echo "code=${code:-0}" >> "$GITHUB_OUTPUT"
