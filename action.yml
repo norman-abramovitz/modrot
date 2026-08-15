@@ -25,7 +25,7 @@ inputs:
   version:
     description: modrot release tag to download.
     required: false
-    default: "v0.11.0"
+    default: "v0.12.0"
   extra-args:
     description: Extra modrot flags, appended verbatim (e.g. "--resolve").
     required: false
