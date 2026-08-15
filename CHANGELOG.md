@@ -9,6 +9,8 @@ are always called out under **BREAKING** below.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-14
+
 ### Added
 
 - npm and Bun support. modrot now discovers `package.json` alongside `go.mod`
@@ -211,7 +213,8 @@ First tagged release, as `modrot`.
 - Flags were ignored when placed after the `go.mod` path.
 - `--deprecated` findings were missing from `--tree --json` output.
 
-[Unreleased]: https://github.com/norman-abramovitz/modrot/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/norman-abramovitz/modrot/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/norman-abramovitz/modrot/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/norman-abramovitz/modrot/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/norman-abramovitz/modrot/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/norman-abramovitz/modrot/compare/v0.6.0...v0.7.0
