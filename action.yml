@@ -1,0 +1,109 @@
+name: modrot
+description: >-
+  Detect archived and deprecated dependencies in Go, npm, and Bun projects
+  and write a SARIF report for GitHub code scanning.
+
+inputs:
+  working-directory:
+    description: >-
+      Directory to scan. SARIF paths are relative to this directory, so
+      keep it at the repository root for code-scanning uploads.
+    required: false
+    default: "."
+  recursive:
+    description: Scan every manifest in the directory tree (monorepos).
+    required: false
+    default: "false"
+  deprecated:
+    description: Also check for deprecated modules and packages.
+    required: false
+    default: "true"
+  sarif-file:
+    description: SARIF output path, relative to working-directory.
+    required: false
+    default: "modrot.sarif"
+  version:
+    description: modrot release tag to download.
+    required: false
+    default: "v0.11.0"
+  extra-args:
+    description: Extra modrot flags, appended verbatim (e.g. "--resolve").
+    required: false
+    default: ""
+  github-token:
+    description: Token exported as GH_TOKEN so modrot can query the GitHub API.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  sarif-file:
+    description: Path of the SARIF file that was written.
+    value: ${{ steps.scan.outputs.sarif-file }}
+  exit-code:
+    description: >-
+      modrot exit code. 0 clean, 1 archived dependencies found, 2 error,
+      3 scan incomplete — do not upload the SARIF when it is 3.
+    value: ${{ steps.scan.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - id: install
+      shell: bash
+      env:
+        MODROT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        command -v gh >/dev/null 2>&1 || {
+          echo "::error::GitHub CLI (gh) is required — modrot reads its token via 'gh auth token'"
+          exit 1
+        }
+        case "$(uname -s)" in
+          Linux)  os=linux ;;
+          Darwin) os=darwin ;;
+          *) echo "::error::modrot supports Linux and macOS runners, got $(uname -s)"; exit 1 ;;
+        esac
+        case "$(uname -m)" in
+          x86_64|amd64)  arch=amd64 ;;
+          aarch64|arm64) arch=arm64 ;;
+          *) echo "::error::unsupported architecture $(uname -m)"; exit 1 ;;
+        esac
+        ver="${MODROT_VERSION#v}"
+        asset="modrot_${ver}_${os}_${arch}.tar.gz"
+        base="https://github.com/norman-abramovitz/modrot/releases/download/${MODROT_VERSION}"
+        dir="$(mktemp -d)"
+        curl -fsSL --retry 3 -o "${dir}/${asset}"      "${base}/${asset}"
+        curl -fsSL --retry 3 -o "${dir}/checksums.txt" "${base}/checksums.txt"
+        cd "$dir"
+        if command -v sha256sum >/dev/null 2>&1; then
+          grep " ${asset}\$" checksums.txt | sha256sum -c -
+        else
+          grep " ${asset}\$" checksums.txt | shasum -a 256 -c -
+        fi
+        tar -xzf "$asset" modrot
+        echo "$dir" >> "$GITHUB_PATH"
+    - id: scan
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        MODROT_DEPRECATED: ${{ inputs.deprecated }}
+        MODROT_RECURSIVE: ${{ inputs.recursive }}
+        MODROT_SARIF_FILE: ${{ inputs.sarif-file }}
+        MODROT_EXTRA_ARGS: ${{ inputs.extra-args }}
+        MODROT_WORKDIR: ${{ inputs.working-directory }}
+      run: |
+        set -uo pipefail
+        args=(--sarif)
+        if [ "$MODROT_DEPRECATED" = "true" ]; then args+=(--deprecated); fi
+        if [ "$MODROT_RECURSIVE" = "true" ]; then args+=(--recursive); fi
+        code=0
+        # extra-args is word-split by design
+        modrot "${args[@]}" $MODROT_EXTRA_ARGS . > "$MODROT_SARIF_FILE" || code=$?
+        echo "exit-code=${code}" >> "$GITHUB_OUTPUT"
+        echo "sarif-file=${MODROT_WORKDIR%/}/${MODROT_SARIF_FILE}" >> "$GITHUB_OUTPUT"
+        if [ "$code" = "2" ]; then
+          echo "::error::modrot exited 2 (error) — see log above"
+          exit 1
+        fi
+        exit 0
